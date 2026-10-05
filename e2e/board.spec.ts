@@ -4,7 +4,7 @@ async function login(page: Page, password: string) {
   await page.goto("/");
   await page.getByLabel("Contraseña", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Entrar" }).click();
-  await expect(page.getByText("En vivo")).toBeVisible();
+  await expect(page.getByText("En vivo", { exact: true })).toBeVisible();
 }
 
 test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ browser }, info) => {
