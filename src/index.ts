@@ -4,7 +4,7 @@ import type { z } from "zod";
 import { COOKIE_NAME, SESSION_TTL_SECONDS, roleForPassword, signSession, verifySession, type Role } from "./auth";
 import * as db from "./db";
 import * as schemas from "./schemas";
-import { STAGES } from "./stages";
+import * as catalog from "./catalog";
 
 export interface Env {
   DB: D1Database;
@@ -130,24 +130,55 @@ const editorOnly = async (c: Context<App>, next: Next) => {
 
 app.get("/session", (c) => c.json({ data: { role: c.get("role") } }));
 
-app.get("/stages", (c) => c.json({ data: STAGES }));
+
+app.get("/catalog", (c) =>
+  c.json({
+    data: {
+      stages: catalog.STAGES,
+      quoteStatuses: catalog.QUOTE_STATUSES,
+      tests: catalog.TESTS,
+      conditioningLimits: catalog.CONDITIONING_LIMITS,
+      activityTypes: catalog.ACTIVITY_TYPES,
+      activityGroups: catalog.ACTIVITY_GROUPS,
+    },
+  }),
+);
+
+/** Responde 304 si el tablero no cambió desde la versión que trae la página. */
+async function notModified(c: Context<App>): Promise<Response | string> {
+  const etag = `W/"${await db.boardVersion(c.env.DB)}"`;
+  c.header("ETag", etag);
+  return c.req.header("If-None-Match") === etag ? c.body(null, 304) : etag;
+}
+
+const ACTIVITY_WINDOW_DAYS = 400;
+
+// Una sola consulta con todo: la página la repite cada pocos segundos.
+app.get("/board", async (c) => {
+  const nm = await notModified(c);
+  if (nm instanceof Response) return nm;
+  const since = new Date(Date.now() - ACTIVITY_WINDOW_DAYS * 864e5).toISOString();
+  return c.json({ data: await db.loadBoard(c.env.DB, since), meta: { serverTime: new Date().toISOString() } });
+});
+
+const idParam = (c: Context) => c.req.param("id") ?? "";
+const now = () => new Date().toISOString();
+
+/** Verifica que un fin no quede antes de su inicio. */
+function endBeforeStart(start: string | null | undefined, end: string | null | undefined): boolean {
+  return Boolean(start && end && Date.parse(end) < Date.parse(start));
+}
 
 // --- Muestras ---------------------------------------------------------------
 
 app.get("/samples", async (c) => {
-  // La página pregunta cada pocos segundos; si nada cambió responde 304 sin leer las muestras.
-  const etag = `W/"${await db.boardVersion(c.env.DB)}"`;
-  if (c.req.header("If-None-Match") === etag) {
-    c.header("ETag", etag);
-    return c.body(null, 304);
-  }
-  const samples = await db.listSamples(c.env.DB);
-  c.header("ETag", etag);
-  return c.json({ data: samples, meta: { serverTime: new Date().toISOString() } });
+  const nm = await notModified(c);
+  if (nm instanceof Response) return nm;
+  return c.json({ data: await db.listSamples(c.env.DB) });
 });
 
 app.get("/samples/:id", async (c) => {
-  const sample = await db.getSample(c.env.DB, c.req.param("id"));
+  const sample = await db.getSample(c.env.DB, idParam(c));
   return sample ? c.json({ data: sample }) : fail(c, 404, "not_found", "Muestra no encontrada");
 });
 
@@ -155,7 +186,10 @@ app.post("/samples", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.createSample);
   if (body instanceof Response) return body;
   const { stage, note, ...fields } = body;
-  const id = await db.createSample(c.env.DB, fields, stage, note ?? "", new Date().toISOString());
+  if (endBeforeStart(fields.conditioningStart, fields.conditioningEnd)) {
+    return fail(c, 422, "validation_error", "El fin del acondicionamiento es anterior a su inicio");
+  }
+  const id = await db.createSample(c.env.DB, fields, stage, note ?? "", now());
   c.header("Location", `/api/v1/samples/${id}`);
   return c.json({ data: await db.getSample(c.env.DB, id) }, 201);
 });
@@ -163,28 +197,99 @@ app.post("/samples", editorOnly, async (c) => {
 app.patch("/samples/:id", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.updateSample);
   if (body instanceof Response) return body;
-  const id = c.req.param("id") ?? "";
-  if (!(await db.updateSample(c.env.DB, id, body, new Date().toISOString()))) {
-    return fail(c, 404, "not_found", "Muestra no encontrada");
+  const current = await db.getSample(c.env.DB, idParam(c));
+  if (!current) return fail(c, 404, "not_found", "Muestra no encontrada");
+  const start = body.conditioningStart !== undefined ? body.conditioningStart : current.conditioningStart;
+  const end = body.conditioningEnd !== undefined ? body.conditioningEnd : current.conditioningEnd;
+  if (endBeforeStart(start, end)) {
+    return fail(c, 422, "validation_error", "El fin del acondicionamiento es anterior a su inicio");
   }
-  return c.json({ data: await db.getSample(c.env.DB, id) });
+  await db.updateSample(c.env.DB, current.id, body, now());
+  return c.json({ data: await db.getSample(c.env.DB, current.id) });
 });
 
 app.delete("/samples/:id", editorOnly, async (c) => {
-  if (!(await db.deleteSample(c.env.DB, c.req.param("id") ?? ""))) {
-    return fail(c, 404, "not_found", "Muestra no encontrada");
-  }
+  if (!(await db.deleteSample(c.env.DB, idParam(c)))) return fail(c, 404, "not_found", "Muestra no encontrada");
   return c.body(null, 204);
 });
 
 app.post("/samples/:id/stage-changes", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.stageChange);
   if (body instanceof Response) return body;
-  const id = c.req.param("id") ?? "";
-  if (!(await db.changeStage(c.env.DB, id, body.stage, body.note ?? "", new Date().toISOString()))) {
+  const id = idParam(c);
+  if (!(await db.changeStage(c.env.DB, id, body.stage, body.note ?? "", now()))) {
     return fail(c, 404, "not_found", "Muestra no encontrada");
   }
   return c.json({ data: await db.getSample(c.env.DB, id) }, 201);
+});
+
+// --- Cotizaciones -----------------------------------------------------------
+
+app.get("/quotes/:id", async (c) => {
+  const quote = await db.getQuote(c.env.DB, idParam(c));
+  return quote ? c.json({ data: quote }) : fail(c, 404, "not_found", "Cotización no encontrada");
+});
+
+app.post("/quotes", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.createQuote);
+  if (body instanceof Response) return body;
+  const { status, note, ...fields } = body;
+  const id = await db.createQuote(c.env.DB, fields, status, note ?? "", now());
+  c.header("Location", `/api/v1/quotes/${id}`);
+  return c.json({ data: await db.getQuote(c.env.DB, id) }, 201);
+});
+
+app.patch("/quotes/:id", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.updateQuote);
+  if (body instanceof Response) return body;
+  const id = idParam(c);
+  if (!(await db.updateQuote(c.env.DB, id, body, now()))) return fail(c, 404, "not_found", "Cotización no encontrada");
+  return c.json({ data: await db.getQuote(c.env.DB, id) });
+});
+
+app.delete("/quotes/:id", editorOnly, async (c) => {
+  if (!(await db.deleteQuote(c.env.DB, idParam(c)))) return fail(c, 404, "not_found", "Cotización no encontrada");
+  return c.body(null, 204);
+});
+
+app.post("/quotes/:id/status-changes", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.quoteStatusChange);
+  if (body instanceof Response) return body;
+  const id = idParam(c);
+  if (!(await db.changeQuoteStatus(c.env.DB, id, body.status, body.note ?? "", now()))) {
+    return fail(c, 404, "not_found", "Cotización no encontrada");
+  }
+  return c.json({ data: await db.getQuote(c.env.DB, id) }, 201);
+});
+
+// --- Actividades (registro de tiempo) ---------------------------------------
+
+app.post("/activities", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.createActivity);
+  if (body instanceof Response) return body;
+  if (endBeforeStart(body.startedAt ?? now(), body.endedAt)) {
+    return fail(c, 422, "validation_error", "La hora de fin es anterior a la de inicio");
+  }
+  const id = await db.createActivity(c.env.DB, body, now());
+  c.header("Location", `/api/v1/activities/${id}`);
+  return c.json({ data: await db.getActivity(c.env.DB, id) }, 201);
+});
+
+app.patch("/activities/:id", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.updateActivity);
+  if (body instanceof Response) return body;
+  const current = await db.getActivity(c.env.DB, idParam(c));
+  if (!current) return fail(c, 404, "not_found", "Actividad no encontrada");
+  const start = body.startedAt ?? current.startedAt;
+  const end = body.endedAt !== undefined ? body.endedAt : current.endedAt;
+  if (endBeforeStart(start, end)) return fail(c, 422, "validation_error", "La hora de fin es anterior a la de inicio");
+  await db.updateActivity(c.env.DB, current.id, body, now());
+  return c.json({ data: await db.getActivity(c.env.DB, current.id) });
+});
+
+app.delete("/activities/:id", editorOnly, async (c) => {
+  if (!(await db.deleteActivity(c.env.DB, idParam(c)))) return fail(c, 404, "not_found", "Actividad no encontrada");
+  return c.body(null, 204);
 });
 
 app.notFound((c) => fail(c, 404, "not_found", "Ruta no encontrada"));

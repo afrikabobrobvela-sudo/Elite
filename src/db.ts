@@ -1,8 +1,14 @@
-import type { SampleFields } from "./schemas";
-import type { StageKey } from "./stages";
+import type { ActivityTypeKey, QuoteStatusKey, StageKey } from "./catalog";
+import type { ActivityFields, QuoteFields, SampleFields } from "./schemas";
 
 export interface StageEvent {
   stage: StageKey;
+  at: string | null;
+  note: string;
+}
+
+export interface QuoteEvent {
+  status: QuoteStatusKey;
   at: string | null;
   note: string;
 }
@@ -11,14 +17,19 @@ export interface Sample {
   id: string;
   code: string;
   quote: string;
+  quoteId: string | null;
   client: string;
   test: string;
   standard: string;
   consultant: string;
   salesRep: string;
-  receivedOn: string | null;
+  adminByMe: boolean;
+  testByMe: boolean;
+  receivedAt: string | null;
   businessDays: number | null;
   dueOn: string | null;
+  conditioningStart: string | null;
+  conditioningEnd: string | null;
   stage: StageKey;
   stageSince: string | null;
   deliveredAt: string | null;
@@ -27,88 +38,179 @@ export interface Sample {
   history: StageEvent[];
 }
 
-interface SampleRow {
+export interface Quote {
   id: string;
-  code: string;
-  quote: string;
+  number: string;
   client: string;
-  test: string;
-  standard: string;
-  consultant: string;
-  sales_rep: string;
-  received_on: string | null;
-  business_days: number | null;
-  due_on: string | null;
-  stage: StageKey;
-  stage_since: string | null;
-  delivered_at: string | null;
-  created_at: string;
-  updated_at: string;
+  salesRep: string;
+  tests: string;
+  notes: string;
+  status: QuoteStatusKey;
+  statusSince: string | null;
+  createdAt: string;
+  updatedAt: string;
+  history: QuoteEvent[];
 }
 
-interface EventRow {
-  sample_id: string;
-  stage: StageKey;
-  at: string | null;
+export interface Activity {
+  id: string;
+  type: ActivityTypeKey;
+  startedAt: string;
+  endedAt: string | null;
   note: string;
+  quoteId: string | null;
+  sampleId: string | null;
 }
 
-/** Columna de la tabla para cada campo editable de la API. */
-const COLUMNS: Record<keyof SampleFields, string> = {
+type Row = Record<string, unknown>;
+
+/** Campo de la API → columna, y conversión de booleanos (SQLite guarda 0/1). */
+const SAMPLE_COLUMNS: Record<keyof SampleFields, string> = {
   code: "code",
   quote: "quote",
+  quoteId: "quote_id",
   client: "client",
   test: "test",
   standard: "standard",
   consultant: "consultant",
   salesRep: "sales_rep",
-  receivedOn: "received_on",
+  adminByMe: "admin_by_me",
+  testByMe: "test_by_me",
+  receivedAt: "received_at",
   businessDays: "business_days",
   dueOn: "due_on",
+  conditioningStart: "conditioning_start",
+  conditioningEnd: "conditioning_end",
 };
+
+const QUOTE_COLUMNS: Record<keyof QuoteFields, string> = {
+  number: "number",
+  client: "client",
+  salesRep: "sales_rep",
+  tests: "tests",
+  notes: "notes",
+};
+
+const ACTIVITY_COLUMNS: Record<keyof ActivityFields, string> = {
+  type: "type",
+  startedAt: "started_at",
+  endedAt: "ended_at",
+  note: "note",
+  quoteId: "quote_id",
+  sampleId: "sample_id",
+};
+
+const toDb = (v: unknown) => (typeof v === "boolean" ? (v ? 1 : 0) : v);
+
+/** Pares columna/valor de los campos presentes (los undefined no se tocan). */
+function assignments<T extends object>(fields: T, columns: Record<keyof T, string>) {
+  const entries = Object.entries(fields).filter(([, v]) => v !== undefined) as [keyof T, unknown][];
+  return { cols: entries.map(([k]) => columns[k]), values: entries.map(([, v]) => toDb(v)) };
+}
 
 const bumpVersion = (db: D1Database) =>
   db.prepare("UPDATE meta SET value = value + 1 WHERE key = 'board_version'");
 
-function toSample(row: SampleRow, history: StageEvent[]): Sample {
+const changed = (r: D1Result | undefined) => (r?.meta.changes ?? 0) > 0;
+
+function toSample(r: Row, history: StageEvent[]): Sample {
   return {
-    id: row.id,
-    code: row.code,
-    quote: row.quote,
-    client: row.client,
-    test: row.test,
-    standard: row.standard,
-    consultant: row.consultant,
-    salesRep: row.sales_rep,
-    receivedOn: row.received_on,
-    businessDays: row.business_days,
-    dueOn: row.due_on,
-    stage: row.stage,
-    stageSince: row.stage_since,
-    deliveredAt: row.delivered_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: r.id as string,
+    code: r.code as string,
+    quote: r.quote as string,
+    quoteId: (r.quote_id as string | null) ?? null,
+    client: r.client as string,
+    test: r.test as string,
+    standard: r.standard as string,
+    consultant: r.consultant as string,
+    salesRep: r.sales_rep as string,
+    adminByMe: r.admin_by_me === 1,
+    testByMe: r.test_by_me === 1,
+    receivedAt: (r.received_at as string | null) ?? null,
+    businessDays: (r.business_days as number | null) ?? null,
+    dueOn: (r.due_on as string | null) ?? null,
+    conditioningStart: (r.conditioning_start as string | null) ?? null,
+    conditioningEnd: (r.conditioning_end as string | null) ?? null,
+    stage: r.stage as StageKey,
+    stageSince: (r.stage_since as string | null) ?? null,
+    deliveredAt: (r.delivered_at as string | null) ?? null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
     history,
   };
 }
+
+function toQuote(r: Row, history: QuoteEvent[]): Quote {
+  return {
+    id: r.id as string,
+    number: r.number as string,
+    client: r.client as string,
+    salesRep: r.sales_rep as string,
+    tests: r.tests as string,
+    notes: r.notes as string,
+    status: r.status as QuoteStatusKey,
+    statusSince: (r.status_since as string | null) ?? null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    history,
+  };
+}
+
+function toActivity(r: Row): Activity {
+  return {
+    id: r.id as string,
+    type: r.type as ActivityTypeKey,
+    startedAt: r.started_at as string,
+    endedAt: (r.ended_at as string | null) ?? null,
+    note: r.note as string,
+    quoteId: (r.quote_id as string | null) ?? null,
+    sampleId: (r.sample_id as string | null) ?? null,
+  };
+}
+
+function groupBy<E>(rows: Row[], key: string, map: (r: Row) => E): Map<string, E[]> {
+  const out = new Map<string, E[]>();
+  for (const r of rows) {
+    const k = r[key] as string;
+    const list = out.get(k) ?? [];
+    list.push(map(r));
+    out.set(k, list);
+  }
+  return out;
+}
+
+const stageEvent = (e: Row): StageEvent => ({ stage: e.stage as StageKey, at: e.at as string | null, note: e.note as string });
+const quoteEvent = (e: Row): QuoteEvent => ({ status: e.status as QuoteStatusKey, at: e.at as string | null, note: e.note as string });
+
+// --- Tablero ------------------------------------------------------------------
 
 export async function boardVersion(db: D1Database): Promise<number> {
   const row = await db.prepare("SELECT value FROM meta WHERE key = 'board_version'").first<{ value: number }>();
   return row?.value ?? 0;
 }
 
-export async function listSamples(db: D1Database): Promise<Sample[]> {
-  const [samples, events] = await db.batch([
+/** Todo lo que la página necesita en una sola lectura. Actividades: las de los últimos `activityDays` días. */
+export async function loadBoard(db: D1Database, activitySince: string) {
+  const [samples, stageEvents, quotes, quoteEvents, activities] = await db.batch([
     db.prepare("SELECT * FROM samples ORDER BY created_at"),
     db.prepare("SELECT sample_id, stage, at, note FROM stage_events ORDER BY id"),
+    db.prepare("SELECT * FROM quotes ORDER BY created_at"),
+    db.prepare("SELECT quote_id, status, at, note FROM quote_events ORDER BY id"),
+    db.prepare("SELECT * FROM activities WHERE started_at >= ? OR ended_at IS NULL ORDER BY started_at").bind(activitySince),
   ]);
-  const bySample = new Map<string, StageEvent[]>();
-  for (const e of events!.results as EventRow[]) {
-    const list = bySample.get(e.sample_id) ?? [];
-    list.push({ stage: e.stage, at: e.at, note: e.note });
-    bySample.set(e.sample_id, list);
-  }
-  return (samples!.results as SampleRow[]).map((r) => toSample(r, bySample.get(r.id) ?? []));
+  const se = groupBy(stageEvents!.results as Row[], "sample_id", stageEvent);
+  const qe = groupBy(quoteEvents!.results as Row[], "quote_id", quoteEvent);
+  return {
+    samples: (samples!.results as Row[]).map((r) => toSample(r, se.get(r.id as string) ?? [])),
+    quotes: (quotes!.results as Row[]).map((r) => toQuote(r, qe.get(r.id as string) ?? [])),
+    activities: (activities!.results as Row[]).map(toActivity),
+  };
+}
+
+// --- Muestras -----------------------------------------------------------------
+
+export async function listSamples(db: D1Database): Promise<Sample[]> {
+  return (await loadBoard(db, "9999")).samples;
 }
 
 export async function getSample(db: D1Database, id: string): Promise<Sample | null> {
@@ -116,12 +218,8 @@ export async function getSample(db: D1Database, id: string): Promise<Sample | nu
     db.prepare("SELECT * FROM samples WHERE id = ?").bind(id),
     db.prepare("SELECT sample_id, stage, at, note FROM stage_events WHERE sample_id = ? ORDER BY id").bind(id),
   ]);
-  const row = samples!.results[0] as SampleRow | undefined;
-  if (!row) return null;
-  return toSample(
-    row,
-    (events!.results as EventRow[]).map((e) => ({ stage: e.stage, at: e.at, note: e.note })),
-  );
+  const row = samples!.results[0] as Row | undefined;
+  return row ? toSample(row, (events!.results as Row[]).map(stageEvent)) : null;
 }
 
 export async function createSample(
@@ -132,31 +230,21 @@ export async function createSample(
   now: string,
 ): Promise<string> {
   const id = crypto.randomUUID();
+  const { cols, values } = assignments(fields, SAMPLE_COLUMNS);
+  const extra: Record<string, unknown> = {
+    id,
+    stage,
+    stage_since: now,
+    delivered_at: stage === "entregado" ? now : null,
+    created_at: now,
+    updated_at: now,
+  };
+  if (stage === "acondicionando" && !fields.conditioningStart) extra.conditioning_start = now;
+  const allCols = [...cols, ...Object.keys(extra)];
   await db.batch([
     db
-      .prepare(
-        `INSERT INTO samples (id, code, quote, client, test, standard, consultant, sales_rep,
-           received_on, business_days, due_on, stage, stage_since, delivered_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        id,
-        fields.code ?? "",
-        fields.quote ?? "",
-        fields.client ?? "",
-        fields.test ?? "",
-        fields.standard ?? "",
-        fields.consultant ?? "",
-        fields.salesRep ?? "",
-        fields.receivedOn ?? null,
-        fields.businessDays ?? null,
-        fields.dueOn ?? null,
-        stage,
-        now,
-        stage === "entregado" ? now : null,
-        now,
-        now,
-      ),
+      .prepare(`INSERT INTO samples (${allCols.join(", ")}) VALUES (${allCols.map(() => "?").join(", ")})`)
+      .bind(...values, ...Object.values(extra)),
     db
       .prepare("INSERT INTO stage_events (sample_id, stage, at, note, recorded_at) VALUES (?, ?, ?, ?, ?)")
       .bind(id, stage, now, note, now),
@@ -166,30 +254,32 @@ export async function createSample(
 }
 
 export async function updateSample(db: D1Database, id: string, fields: SampleFields, now: string): Promise<boolean> {
-  const entries = Object.entries(fields).filter(([, v]) => v !== undefined) as [keyof SampleFields, unknown][];
-  const sets = entries.map(([k]) => `${COLUMNS[k]} = ?`);
-  const values = entries.map(([, v]) => v);
+  const { cols, values } = assignments(fields, SAMPLE_COLUMNS);
   const [result] = await db.batch([
-    db.prepare(`UPDATE samples SET ${[...sets, "updated_at = ?"].join(", ")} WHERE id = ?`).bind(...values, now, id),
+    db
+      .prepare(`UPDATE samples SET ${[...cols, "updated_at"].map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
+      .bind(...values, now, id),
     bumpVersion(db),
   ]);
-  return (result!.meta.changes ?? 0) > 0;
+  return changed(result);
 }
 
-/** Registra el paso a otra etapa con la hora del servidor. */
-export async function changeStage(
-  db: D1Database,
-  id: string,
-  stage: StageKey,
-  note: string,
-  now: string,
-): Promise<boolean> {
+/**
+ * Registra el paso a otra etapa con la hora del servidor.
+ * Al entrar a "Acondicionando" se anota el inicio, y al salir de ahí el fin,
+ * salvo que ya estuvieran capturados a mano.
+ */
+export async function changeStage(db: D1Database, id: string, stage: StageKey, note: string, now: string): Promise<boolean> {
   const [result] = await db.batch([
     db
       .prepare(
-        "UPDATE samples SET stage = ?, stage_since = ?, delivered_at = ?, updated_at = ? WHERE id = ?",
+        `UPDATE samples SET
+           conditioning_start = CASE WHEN ?1 = 'acondicionando' AND conditioning_start IS NULL THEN ?2 ELSE conditioning_start END,
+           conditioning_end = CASE WHEN stage = 'acondicionando' AND ?1 <> 'acondicionando' AND conditioning_end IS NULL THEN ?2 ELSE conditioning_end END,
+           stage = ?1, stage_since = ?2, delivered_at = CASE WHEN ?1 = 'entregado' THEN ?2 ELSE NULL END, updated_at = ?2
+         WHERE id = ?3`,
       )
-      .bind(stage, now, stage === "entregado" ? now : null, now, id),
+      .bind(stage, now, id),
     db
       .prepare(
         // Solo inserta si la muestra existe, para no dejar eventos huérfanos.
@@ -198,17 +288,137 @@ export async function changeStage(
       .bind(stage, now, note, now, id),
     bumpVersion(db),
   ]);
-  return (result!.meta.changes ?? 0) > 0;
+  return changed(result);
 }
 
 export async function deleteSample(db: D1Database, id: string): Promise<boolean> {
-  const [, result] = await db.batch([
+  const [, , result] = await db.batch([
     db.prepare("DELETE FROM stage_events WHERE sample_id = ?").bind(id),
+    db.prepare("UPDATE activities SET sample_id = NULL WHERE sample_id = ?").bind(id),
     db.prepare("DELETE FROM samples WHERE id = ?").bind(id),
     bumpVersion(db),
   ]);
-  return (result!.meta.changes ?? 0) > 0;
+  return changed(result);
 }
+
+// --- Cotizaciones ---------------------------------------------------------------
+
+export async function getQuote(db: D1Database, id: string): Promise<Quote | null> {
+  const [quotes, events] = await db.batch([
+    db.prepare("SELECT * FROM quotes WHERE id = ?").bind(id),
+    db.prepare("SELECT quote_id, status, at, note FROM quote_events WHERE quote_id = ? ORDER BY id").bind(id),
+  ]);
+  const row = quotes!.results[0] as Row | undefined;
+  return row ? toQuote(row, (events!.results as Row[]).map(quoteEvent)) : null;
+}
+
+export async function createQuote(
+  db: D1Database,
+  fields: QuoteFields,
+  status: QuoteStatusKey,
+  note: string,
+  now: string,
+): Promise<string> {
+  const id = crypto.randomUUID();
+  const { cols, values } = assignments(fields, QUOTE_COLUMNS);
+  const allCols = [...cols, "id", "status", "status_since", "created_at", "updated_at"];
+  await db.batch([
+    db
+      .prepare(`INSERT INTO quotes (${allCols.join(", ")}) VALUES (${allCols.map(() => "?").join(", ")})`)
+      .bind(...values, id, status, now, now, now),
+    db
+      .prepare("INSERT INTO quote_events (quote_id, status, at, note, recorded_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(id, status, now, note, now),
+    bumpVersion(db),
+  ]);
+  return id;
+}
+
+export async function updateQuote(db: D1Database, id: string, fields: QuoteFields, now: string): Promise<boolean> {
+  const { cols, values } = assignments(fields, QUOTE_COLUMNS);
+  const [result] = await db.batch([
+    db
+      .prepare(`UPDATE quotes SET ${[...cols, "updated_at"].map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
+      .bind(...values, now, id),
+    bumpVersion(db),
+  ]);
+  return changed(result);
+}
+
+export async function changeQuoteStatus(
+  db: D1Database,
+  id: string,
+  status: QuoteStatusKey,
+  note: string,
+  now: string,
+): Promise<boolean> {
+  const [result] = await db.batch([
+    db.prepare("UPDATE quotes SET status = ?, status_since = ?, updated_at = ? WHERE id = ?").bind(status, now, now, id),
+    db
+      .prepare(
+        "INSERT INTO quote_events (quote_id, status, at, note, recorded_at) SELECT id, ?, ?, ?, ? FROM quotes WHERE id = ?",
+      )
+      .bind(status, now, note, now, id),
+    bumpVersion(db),
+  ]);
+  return changed(result);
+}
+
+/** Borra la cotización; sus muestras y actividades se conservan, solo pierden el vínculo. */
+export async function deleteQuote(db: D1Database, id: string): Promise<boolean> {
+  const [, , , result] = await db.batch([
+    db.prepare("DELETE FROM quote_events WHERE quote_id = ?").bind(id),
+    db.prepare("UPDATE samples SET quote_id = NULL WHERE quote_id = ?").bind(id),
+    db.prepare("UPDATE activities SET quote_id = NULL WHERE quote_id = ?").bind(id),
+    db.prepare("DELETE FROM quotes WHERE id = ?").bind(id),
+    bumpVersion(db),
+  ]);
+  return changed(result);
+}
+
+// --- Actividades (registro de tiempo) -------------------------------------------
+
+export async function getActivity(db: D1Database, id: string): Promise<Activity | null> {
+  const row = await db.prepare("SELECT * FROM activities WHERE id = ?").bind(id).first<Row>();
+  return row ? toActivity(row) : null;
+}
+
+/** Crea un bloque de tiempo. Si queda en curso, cierra el que estuviera corriendo. */
+export async function createActivity(db: D1Database, fields: ActivityFields, now: string): Promise<string> {
+  const id = crypto.randomUUID();
+  const startedAt = fields.startedAt ?? now;
+  const running = !fields.endedAt;
+  const { cols, values } = assignments({ ...fields, startedAt }, ACTIVITY_COLUMNS);
+  const allCols = [...cols, "id", "created_at", "updated_at"];
+  await db.batch([
+    ...(running
+      ? [db.prepare("UPDATE activities SET ended_at = ?, updated_at = ? WHERE ended_at IS NULL").bind(now, now)]
+      : []),
+    db
+      .prepare(`INSERT INTO activities (${allCols.join(", ")}) VALUES (${allCols.map(() => "?").join(", ")})`)
+      .bind(...values, id, now, now),
+    bumpVersion(db),
+  ]);
+  return id;
+}
+
+export async function updateActivity(db: D1Database, id: string, fields: ActivityFields, now: string): Promise<boolean> {
+  const { cols, values } = assignments(fields, ACTIVITY_COLUMNS);
+  const [result] = await db.batch([
+    db
+      .prepare(`UPDATE activities SET ${[...cols, "updated_at"].map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
+      .bind(...values, now, id),
+    bumpVersion(db),
+  ]);
+  return changed(result);
+}
+
+export async function deleteActivity(db: D1Database, id: string): Promise<boolean> {
+  const [result] = await db.batch([db.prepare("DELETE FROM activities WHERE id = ?").bind(id), bumpVersion(db)]);
+  return changed(result);
+}
+
+// --- Inicio de sesión -------------------------------------------------------------
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 export const MAX_LOGIN_FAILURES = 10;
