@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Tablero de muestras</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='4' height='12' rx='1' fill='%231d5c86'/%3E%3Crect x='6' y='2' width='4' height='8' rx='1' fill='%231d5c86'/%3E%3Crect x='11' y='2' width='4' height='5' rx='1' fill='%231d5c86'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="login" id="loginView" hidden>
+    <form id="loginForm" class="login-card">
+      <h1>Tablero de muestras</h1>
+      <p class="sub">Escribe la contraseña que te compartieron.</p>
+      <label for="password">Contraseña</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Entrar</button>
+      <p class="error" id="loginError" role="alert"></p>
+    </form>
+  </main>
+
+  <div class="wrap" id="boardView" hidden>
+    <header>
+      <div>
+        <h1>Tablero de muestras</h1>
+        <p class="sub">Etapa actual de cada muestra del laboratorio, con fecha y hora de cada cambio.</p>
+      </div>
+      <div class="tools">
+        <span class="live" id="live"><span class="dot"></span><span id="liveTxt">Conectando…</span></span>
+        <input id="q" type="search" placeholder="Buscar muestra, cliente, prueba" aria-label="Buscar">
+        <button class="primary" id="addBtn" hidden>Nueva muestra</button>
+        <button id="logoutBtn">Salir</button>
+      </div>
+    </header>
+    <div class="banner" id="banner" role="status" hidden></div>
+    <section class="kpis" aria-label="Resumen">
+      <div class="kpi"><b id="kActive">–</b><span>En proceso</span></div>
+      <div class="kpi late"><b id="kLate">–</b><span>Pasaron fecha compromiso</span></div>
+      <div class="kpi warn"><b id="kSoon">–</b><span>Vencen en 2 días hábiles</span></div>
+      <div class="kpi"><b id="kDone">–</b><span>Entregadas últimos 30 días</span></div>
+    </section>
+    <div class="board-scroll"><div class="board" id="board"></div></div>
+    <section class="sec" aria-labelledby="avgTitle">
+      <h4 id="avgTitle">Tiempo promedio en cada etapa</h4>
+      <div class="avg" id="avg"></div>
+    </section>
+    <p class="note">Los días se cuentan en días hábiles (lunes a viernes, sin feriados de ley). Rojo: ya pasó la fecha compromiso. Ámbar: vence en 2 días hábiles o menos.</p>
+  </div>
+  <div id="sheetHost"></div>
+</body>
+</html>
