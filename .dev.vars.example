@@ -1,0 +1,4 @@
+# Copia este archivo como .dev.vars para desarrollo local.
+EDITOR_PASSWORD=cambia-esta-clave-de-edicion
+VIEWER_PASSWORD=cambia-esta-clave-de-lectura
+SESSION_SECRET=una-cadena-larga-y-aleatoria-de-al-menos-32-caracteres

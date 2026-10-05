@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "elite",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  // La página (public/) se sirve como archivos estáticos; solo /api/* pasa por el Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "elite",
+      // Reemplazar con el id que imprime `npx wrangler d1 create elite`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Secretos (no van aquí): EDITOR_PASSWORD, VIEWER_PASSWORD, SESSION_SECRET.
+  // En producción: `npx wrangler secret put <NOMBRE>`. En local: archivo .dev.vars.
+}
