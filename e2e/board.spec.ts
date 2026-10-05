@@ -4,7 +4,7 @@ async function login(page: Page, password: string) {
   await page.goto("/");
   await page.getByLabel("Contraseña", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Entrar" }).click();
-  await expect(page.getByText("En vivo")).toBeVisible();
+  await expect(page.getByText("En vivo", { exact: true })).toBeVisible();
 }
 
 test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ browser }, info) => {
@@ -78,6 +78,36 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await page.getByRole("tab", { name: "Mi productividad" }).click();
   await expect(page.locator("#timeline").getByText(number).first()).toBeVisible();
   await expect(page.locator("#chartTypes").getByText("Elaborar cotización")).toBeVisible();
+});
+
+test("modo demo: datos ficticios sin tocar la base real", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ver demo con datos ficticios" }).click();
+  await expect(page.getByRole("region", { name: "Modo demo" })).toBeVisible();
+  await expect(page.locator("#sampleBoard .card").first()).toBeVisible();
+  await expect(page).toHaveURL(/\?demo/);
+
+  // Un cambio en el demo se ve en pantalla...
+  await page.getByRole("button", { name: "Nueva muestra" }).click();
+  await page.getByLabel("Muestra", { exact: true }).fill("DEMO-NUEVA");
+  await page.getByRole("button", { name: "Agregar muestra", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "DEMO-NUEVA" })).toBeVisible();
+  await page.getByRole("button", { name: "Cerrar" }).click();
+
+  // ...y la vista del jefe es de solo lectura.
+  await page.getByRole("button", { name: "Ver como jefe" }).click();
+  await expect(page.getByRole("button", { name: "Nueva muestra" })).toBeHidden();
+  await page.getByRole("tab", { name: "Mi productividad" }).click();
+  await expect(page.locator("#chartHours .bar").first()).toBeVisible();
+  await expect(page.locator("#timeline .ti").first()).toBeVisible();
+
+  // Al salir, la página pide contraseña y la base real no tiene esa muestra.
+  await page.getByRole("button", { name: "Salir" }).click();
+  await login(page, "clave-editor");
+  await expect(page.locator("#sampleBoard").getByText("DEMO-NUEVA")).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
 
 test("contraseña incorrecta", async ({ page }) => {

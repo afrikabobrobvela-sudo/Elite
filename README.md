@@ -13,6 +13,8 @@ Tiene tres pestañas:
 | **Cotizaciones** | En elaboración → Enviada al cliente → En seguimiento → Comprada / Perdida. Cada cotización se vincula con sus muestras. |
 | **Mi productividad** | Carga actual, horas por día (administrativo / evaluación / otro), tiempo por actividad y la línea del tiempo de todo el trabajo. |
 
+**Modo demo:** en la pantalla de entrada, "Ver demo con datos ficticios" (o la dirección con `?demo`) abre la página con seis semanas de cotizaciones, muestras y tiempos inventados, generados en el navegador (`public/js/demo.js`). No usa la base de datos ni pide contraseña; los cambios se pierden al salir. Se puede alternar entre la vista de Rodrigo y la del jefe.
+
 Las tarjetas se ponen **ámbar** a 2 días hábiles de la fecha compromiso y **rojas** cuando se pasan. Los días hábiles excluyen fines de semana y los feriados de ley (art. 74 LFT). El acondicionamiento guarda inicio y fin con hora; para Flamabilidad Horizontal avisa si pasa de 7 días. La lista de pruebas está en `src/catalog.ts`.
 
 ## Cómo está hecho
@@ -32,7 +34,7 @@ Las tarjetas se ponen **ámbar** a 2 días hábiles de la fecha compromiso y **r
 |---|---|---|
 | `POST` | `/api/v1/session` `{password}` | todos (inicia sesión) |
 | `GET` / `DELETE` | `/api/v1/session` | con sesión |
-| `GET` | `/api/v1/catalog` (etapas, pruebas, estados, actividades) | con sesión |
+| `GET` | `/api/v1/catalog` (etapas, pruebas, estados, actividades) | todos (no tiene datos del laboratorio) |
 | `GET` | `/api/v1/board` (todo junto, con `ETag`; 304 si nada cambió) | con sesión |
 | `GET` | `/api/v1/samples`, `/api/v1/samples/:id`, `/api/v1/quotes/:id` | con sesión |
 | `POST` | `/api/v1/samples`, `/api/v1/quotes`, `/api/v1/activities` | edición |

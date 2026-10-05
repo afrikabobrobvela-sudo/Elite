@@ -20,6 +20,7 @@
       <input id="password" type="password" autocomplete="current-password" required>
       <button class="primary" type="submit">Entrar</button>
       <p class="error" id="loginError" role="alert"></p>
+      <p class="demo-link"><button type="button" id="demoBtn" class="link">Ver demo con datos ficticios</button></p>
     </form>
   </main>
 
@@ -35,6 +36,15 @@
         <button id="logoutBtn">Salir</button>
       </div>
     </header>
+
+    <div class="demobar" id="demoBar" role="region" aria-label="Modo demo" hidden>
+      <span><b>Modo demo.</b> Datos ficticios; lo que cambies no se guarda.</span>
+      <span class="seg-ctl" role="group" aria-label="Ver como">
+        <button data-demorole="editor">Ver como Rodrigo</button>
+        <button data-demorole="viewer">Ver como jefe</button>
+      </span>
+      <button id="demoReset">Reiniciar datos</button>
+    </div>
 
     <div class="actbar" id="activityBar" role="region" aria-label="Actividad en curso" hidden></div>
 
