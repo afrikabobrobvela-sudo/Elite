@@ -322,4 +322,9 @@ describe("catálogo", () => {
     expect(data.tests).toHaveLength(17);
     expect(data.tests).toContain("Prueba de Impacto");
   });
+
+  it("se puede leer sin sesión (lo usa el modo demo), pero los datos no", async () => {
+    expect((await worker.fetch(`${BASE}/catalog`)).status).toBe(200);
+    expect((await worker.fetch(`${BASE}/board`)).status).toBe(401);
+  });
 });

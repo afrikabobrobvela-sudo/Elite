@@ -116,6 +116,9 @@ form.grid .full{grid-column:1/-1}
 .turn.mine{color:var(--accent)}
 .card.waiting{background:color-mix(in srgb,var(--surface) 70%,var(--sunk))}
 .actbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.demobar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:.9rem}
+.demobar>span:first-child{flex:1 1 260px}
+.demo-link{margin:6px 0 0;text-align:center;font-size:.9rem}
 .actbar form{flex:1}
 .actbar select,.actbar input{max-width:260px}
 .rec{width:10px;height:10px;border-radius:50%;background:var(--late);box-shadow:0 0 0 3px var(--late-soft)}

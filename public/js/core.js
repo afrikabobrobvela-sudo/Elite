@@ -10,6 +10,7 @@ export const state = {
   etag: null,
   query: "",
   view: "muestras",
+  demo: false,
 };
 
 export const $ = (id) => document.getElementById(id);
@@ -30,7 +31,12 @@ export class ApiError extends Error {
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => (onUnauthorized = fn);
 
+// En modo demo las llamadas las contesta js/demo.js en el navegador (el catálogo sí viene del servidor).
+let localApi = null;
+export const setLocalApi = (fn) => (localApi = fn);
+
 export async function api(path, { method = "GET", body, headers = {} } = {}) {
+  if (localApi && path !== "/catalog") return localApi(path, { method, body, headers });
   const res = await fetch("/api/v1" + path, {
     method,
     headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },

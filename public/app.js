@@ -1,6 +1,7 @@
 // Arranque: sesión, pestañas y sincronización en vivo.
 import { renderActivityBar } from "./js/activities.js";
-import { $, api, closeSheet, drawSheet, openSheet, setRefresher, setUnauthorizedHandler, state } from "./js/core.js";
+import { $, api, closeSheet, drawSheet, openSheet, setLocalApi, setRefresher, setUnauthorizedHandler, state } from "./js/core.js";
+import { demoApi, setDemoRole, startDemo, stopDemo } from "./js/demo.js";
 import { bindProductivityControls, renderProductivity } from "./js/productivity.js";
 import { bindQuoteControls, renderQuotes } from "./js/quotes.js";
 import { bindSampleControls, renderSamples } from "./js/samples.js";
@@ -27,7 +28,7 @@ function setLive(s) {
   const l = $("live");
   l.classList.toggle("on", s === "on");
   l.classList.toggle("off", s === "off");
-  $("liveTxt").textContent = s === "on" ? "En vivo" : s === "off" ? "Sin conexión" : "Conectando…";
+  $("liveTxt").textContent = state.demo ? "Demo" : s === "on" ? "En vivo" : s === "off" ? "Sin conexión" : "Conectando…";
 }
 
 async function refresh() {
@@ -60,11 +61,17 @@ function showLogin() {
 }
 setUnauthorizedHandler(showLogin);
 
-async function showBoard(role) {
+function applyRole(role) {
   state.role = role;
+  for (const el of document.querySelectorAll("[data-editor]")) el.hidden = role !== "editor";
+  for (const b of document.querySelectorAll("[data-demorole]")) b.setAttribute("aria-pressed", String(b.dataset.demorole === role));
+}
+
+async function showBoard(role) {
   $("loginView").hidden = true;
   $("boardView").hidden = false;
-  for (const el of document.querySelectorAll("[data-editor]")) el.hidden = role !== "editor";
+  $("demoBar").hidden = !state.demo;
+  applyRole(role);
   if (!state.catalog) state.catalog = (await api("/catalog")).data;
   const fromHash = location.hash.slice(1);
   if (VIEWS.includes(fromHash)) state.view = fromHash;
@@ -88,8 +95,40 @@ $("loginForm").addEventListener("submit", async (e) => {
 $("logoutBtn").addEventListener("click", async () => {
   await api("/session", { method: "DELETE" }).catch(() => {});
   Object.assign(state, { samples: [], quotes: [], activities: [] });
+  if (state.demo) leaveDemo();
   showLogin();
 });
+
+// --- Modo demo: datos ficticios en el navegador, separados de la base real. ---
+
+async function enterDemo(role = "editor") {
+  if (!state.catalog) state.catalog = (await api("/catalog")).data;
+  startDemo(state.catalog, role);
+  setLocalApi(demoApi);
+  state.demo = true;
+  history.replaceState(null, "", "?demo" + location.hash);
+  closeSheet();
+  await showBoard(role);
+}
+
+function leaveDemo() {
+  stopDemo();
+  setLocalApi(null);
+  state.demo = false;
+  state.etag = null;
+  history.replaceState(null, "", "/" + location.hash);
+}
+
+$("demoBtn").addEventListener("click", () => enterDemo().catch(() => ($("loginError").textContent = "No se pudo abrir el demo.")));
+$("demoReset").addEventListener("click", () => enterDemo(state.role));
+for (const b of document.querySelectorAll("[data-demorole]")) {
+  b.addEventListener("click", () => {
+    setDemoRole(b.dataset.demorole);
+    applyRole(b.dataset.demorole);
+    closeSheet();
+    render();
+  });
+}
 
 // Pestañas (con flechas del teclado, como pide el patrón de tabs accesibles).
 function selectView(v) {
@@ -127,6 +166,13 @@ bindQuoteControls();
 bindProductivityControls();
 
 (async () => {
+  if (new URLSearchParams(location.search).has("demo")) {
+    try {
+      return await enterDemo();
+    } catch {
+      leaveDemo();
+    }
+  }
   try {
     const res = await api("/session");
     await showBoard(res.data.role);

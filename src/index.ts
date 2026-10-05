@@ -115,6 +115,20 @@ app.delete("/session", (c) => {
   return c.body(null, 204);
 });
 
+// El catálogo no tiene datos del laboratorio; el modo demo lo usa sin sesión.
+app.get("/catalog", (c) =>
+  c.json({
+    data: {
+      stages: catalog.STAGES,
+      quoteStatuses: catalog.QUOTE_STATUSES,
+      tests: catalog.TESTS,
+      conditioningLimits: catalog.CONDITIONING_LIMITS,
+      activityTypes: catalog.ACTIVITY_TYPES,
+      activityGroups: catalog.ACTIVITY_GROUPS,
+    },
+  }),
+);
+
 // Todo lo de abajo requiere sesión.
 app.use("*", async (c, next) => {
   const role = await verifySession(getCookie(c, COOKIE_NAME), c.env.SESSION_SECRET);
@@ -130,19 +144,6 @@ const editorOnly = async (c: Context<App>, next: Next) => {
 
 app.get("/session", (c) => c.json({ data: { role: c.get("role") } }));
 
-
-app.get("/catalog", (c) =>
-  c.json({
-    data: {
-      stages: catalog.STAGES,
-      quoteStatuses: catalog.QUOTE_STATUSES,
-      tests: catalog.TESTS,
-      conditioningLimits: catalog.CONDITIONING_LIMITS,
-      activityTypes: catalog.ACTIVITY_TYPES,
-      activityGroups: catalog.ACTIVITY_GROUPS,
-    },
-  }),
-);
 
 /** Responde 304 si el tablero no cambió desde la versión que trae la página. */
 async function notModified(c: Context<App>): Promise<Response | string> {
