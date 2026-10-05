@@ -14,8 +14,7 @@
     {
       "binding": "DB",
       "database_name": "elite",
-      // Reemplazar con el id que imprime `npx wrangler d1 create elite`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "79aaf2a5-02e8-4bf3-9bfd-78d4847ee6c1",
       "migrations_dir": "migrations"
     }
   ]
