@@ -3,7 +3,7 @@ import { addBusinessDays, dueStatus } from "/business-days.js";
 import {
   $, activityMs, activityTypeOf, ago, applySizes, api, canWrite, conditioningInfo, deleteBlock, esc, fmtHours, fmtTs,
   fromLocalInput, isMine, matchesQuery, mutate, openSheet, quoteById, registerSheet, stageIdx, stageOf, stages, state,
-  timelineHtml, toLocalInput, turnLabel,
+  timelineHtml, toLocalInput, turnLabel, whenInput, whenValue,
 } from "./core.js";
 
 let filter = "todas"; // todas | mias | otros
@@ -42,6 +42,7 @@ export function renderSamples() {
     <div class="phase" data-span="${nAdmin}">Parte administrativa</div>
     <div class="phase eval" data-span="${stages().length - nAdmin}">Evaluación</div>
     ${cols.join("")}`;
+  $("sampleBoard").style.setProperty("--cols", stages().length);
   applySizes($("sampleBoard"));
 }
 
@@ -78,7 +79,7 @@ registerSheet("sample", (open) => {
   const isNew = !open.id;
   const q = open.opts.quoteId ? quoteById(open.opts.quoteId) : null;
   const m = isNew
-    ? { stage: "vobo", history: [], adminByMe: true, testByMe: true, quoteId: q?.id ?? null, quote: q?.number ?? "", client: q?.client ?? "", salesRep: q?.salesRep ?? "" }
+    ? { stage: "recibo_muestra", history: [], adminByMe: true, testByMe: true, quoteId: q?.id ?? null, quote: q?.number ?? "", client: q?.client ?? "", salesRep: q?.salesRep ?? "" }
     : state.samples.find((x) => x.id === open.id);
   if (!m) return null;
 
@@ -96,13 +97,31 @@ registerSheet("sample", (open) => {
   const linked = state.activities.filter((a) => a.sampleId === m.id);
   const linkedMs = linked.reduce((t, a) => t + activityMs(a), 0);
 
+  // Cronómetro de la etapa (p. ej. el recibo de muestra): mide cuánto tardas en ella.
+  const stageAct = !isNew && canWrite() && stageOf(m.stage)?.activity && activityTypeOf(stageOf(m.stage).activity);
+  const run = state.activities.find((a) => !a.endedAt);
+  const runningHere = run && run.sampleId === m.id;
+  const byType = {};
+  for (const a of linked) byType[a.type] = (byType[a.type] ?? 0) + activityMs(a);
+  const timer = !isNew && canWrite() && (stageAct || runningHere)
+    ? `<div class="sec"><h4>Cronómetro</h4><div class="row">${
+        runningHere
+          ? `<span class="note"><b>${esc(activityTypeOf(run.type)?.name)}</b> corriendo desde ${esc(fmtTs(run.startedAt))}</span><button class="primary" id="sStopTimer">Terminar</button>`
+          : `<button class="primary" id="sStartTimer">Iniciar: ${esc(stageAct.name)}</button>`
+      }</div>${stageAct && byType[stageAct.key] ? `<p class="note">Llevas ${fmtHours(byType[stageAct.key])} en ${esc(stageAct.name.toLowerCase())} de esta muestra.</p>` : ""}</div>`
+    : "";
+
   const body = `
     ${isNew ? "" : `<div class="row"><span class="chip ${st.c}">${esc(st.t)}</span><span class="note">Etapa actual: <b>${esc(stageOf(m.stage).name)}</b>${m.stage !== "entregado" ? " desde hace " + esc(ago(m.stageSince)) : ""}</span></div>`}
     ${!isNew && canWrite() ? `<div class="sec"><h4>Cambiar etapa</h4><div class="row">
       ${nextS ? `<button class="primary" id="nextBtn">Pasar a ${esc(nextS.name)}</button>` : ""}
       <select id="stageSel" aria-label="Elegir etapa">${stages().map((s) => `<option value="${s.key}" ${s.key === m.stage ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
       <button id="setBtn">Mover</button></div>
-      <input id="nota" maxlength="500" placeholder="Nota opcional (ej. cliente no ha dado VoBo)" aria-label="Nota del cambio"></div>` : ""}
+      <div class="grid">
+        ${whenInput("sAt", "Fecha y hora del cambio")}
+        <label>Nota<input id="nota" aria-label="Nota del cambio" maxlength="500" placeholder="Opcional (ej. cliente no ha dado VoBo)"></label>
+      </div></div>` : ""}
+    ${timer}
     ${showCond ? `<div class="sec"><h4>Acondicionamiento</h4>
       <form class="grid" id="condForm">
         ${input("conditioningStart", "Inicio", "datetime-local", "", toLocalInput(m.conditioningStart))}
@@ -110,7 +129,7 @@ registerSheet("sample", (open) => {
         <p class="note full">${cond ? `<span class="chip ${cond.c}">${esc(cond.t)}</span> ` : ""}${limit ? `Para ${esc(m.test)} el acondicionamiento dura de ${limit.minDays} a ${limit.maxDays} días.` : "Se anota solo al pasar a Acondicionando y al salir; puedes corregirlo aquí."}</p>
         ${canWrite() ? `<div class="row full"><button type="submit">Guardar acondicionamiento</button><span class="note" id="condMsg" role="status"></span></div>` : ""}
       </form></div>` : ""}
-    ${isNew ? "" : `<div class="sec"><h4>Historial de etapas</h4>${timelineHtml(m.history.map((h) => ({ key: h.stage, label: stageOf(h.stage)?.name || h.stage, at: h.at, note: h.note })), "entregado")}</div>`}
+    ${isNew ? "" : `<div class="sec"><h4>Historial de etapas</h4>${timelineHtml(m.history.map((h) => ({ id: h.id, key: h.stage, label: stageOf(h.stage)?.name || h.stage, at: h.at, note: h.note })), "entregado", `/samples/${m.id}`)}</div>`}
     ${!isNew && linked.length ? `<div class="sec"><h4>Tiempo registrado en esta muestra: ${fmtHours(linkedMs)}</h4>
       <ul class="plain">${linked.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
@@ -126,10 +145,11 @@ registerSheet("sample", (open) => {
       ${input("businessDays", "Días hábiles comprometidos", "number")}
       ${input("dueOn", "Fecha compromiso", "date")}
       <fieldset class="full checks"><legend>¿Qué parte te toca?</legend>
-        <label class="check"><input type="checkbox" id="f_adminByMe" ${m.adminByMe ? "checked" : ""} ${dis}> La parte administrativa (VoBo, maquinado, entrega de probetas)</label>
+        <label class="check"><input type="checkbox" id="f_adminByMe" ${m.adminByMe ? "checked" : ""} ${dis}> La parte administrativa (recibo, VoBo, maquinado, entrega de probetas)</label>
         <label class="check"><input type="checkbox" id="f_testByMe" ${m.testByMe ? "checked" : ""} ${dis}> Las pruebas y el reporte</label>
       </fieldset>
-      ${isNew ? `<label class="full">Etapa inicial<select id="f_stage" aria-label="Etapa inicial">${stages().slice(0, -1).map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join("")}</select></label>` : ""}
+      ${isNew ? `<label>Etapa inicial<select id="f_stage" aria-label="Etapa inicial">${stages().slice(0, -1).map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join("")}</select></label>
+        ${whenInput("f_at", "Desde cuándo está en esa etapa")}` : ""}
       ${canWrite() ? `<div class="row full"><button class="primary" type="submit">${isNew ? "Agregar muestra" : "Guardar datos"}</button><span class="note" id="saveMsg" role="status"></span></div>` : ""}
     </form></div>
     ${isNew ? "" : deleteBlock(m.code || "esta muestra", () => api(`/samples/${m.id}`, { method: "DELETE" })).html}`;
@@ -138,15 +158,18 @@ registerSheet("sample", (open) => {
     if (!isNew) deleteBlock(m.code || "esta muestra", () => api(`/samples/${m.id}`, { method: "DELETE" })).bind();
     const moveTo = async (stage) => {
       const note = ($("nota")?.value || "").trim();
+      const at = whenValue("sAt");
       document.activeElement?.blur();
-      await mutate(() => api(`/samples/${m.id}/stage-changes`, { method: "POST", body: { stage, note: note || undefined } }));
+      await mutate(() => api(`/samples/${m.id}/stage-changes`, { method: "POST", body: { stage, note: note || undefined, at } }));
     };
+    if ($("sStartTimer")) $("sStartTimer").onclick = () => mutate(() => api("/activities", { method: "POST", body: { type: stageAct.key, sampleId: m.id } }));
+    if ($("sStopTimer")) $("sStopTimer").onclick = () => mutate(() => api(`/activities/${run.id}`, { method: "PATCH", body: { endedAt: new Date().toISOString() } }));
     if ($("nextBtn")) $("nextBtn").onclick = () => moveTo(nextS.key);
     if ($("setBtn")) $("setBtn").onclick = () => $("stageSel").value !== m.stage && moveTo($("stageSel").value);
 
     // Etapa inicial sugerida: si la parte administrativa no es tuya, la muestra te llega ya recibida.
     const initial = $("f_stage");
-    const syncInitial = () => initial && (initial.value = $("f_adminByMe").checked ? "vobo" : "recibido");
+    const syncInitial = () => initial && (initial.value = $("f_adminByMe").checked ? "recibo_muestra" : "recibido");
     if (initial) { syncInitial(); $("f_adminByMe").addEventListener("change", syncInitial); }
 
     $("f_quoteId").addEventListener("change", (e) => {
@@ -186,6 +209,7 @@ registerSheet("sample", (open) => {
       body.testByMe = $("f_testByMe").checked;
       if (isNew) {
         body.stage = initial.value;
+        body.at = whenValue("f_at");
         const res = await mutate(() => api("/samples", { method: "POST", body }));
         if (res) openSheet("sample", res.data.id);
       } else {

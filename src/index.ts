@@ -125,6 +125,7 @@ app.get("/catalog", (c) =>
       conditioningLimits: catalog.CONDITIONING_LIMITS,
       activityTypes: catalog.ACTIVITY_TYPES,
       activityGroups: catalog.ACTIVITY_GROUPS,
+      followUpDays: catalog.FOLLOW_UP_DAYS,
     },
   }),
 );
@@ -170,6 +171,34 @@ function endBeforeStart(start: string | null | undefined, end: string | null | u
   return Boolean(start && end && Date.parse(end) < Date.parse(start));
 }
 
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
+/**
+ * Valida la fecha de un cambio de etapa o estado: no puede ser futura ni quedar fuera
+ * de orden respecto a los renglones vecinos del historial. Devuelve el mensaje de error o null.
+ */
+function badEventDate(at: string, prev?: string | null, next?: string | null): string | null {
+  const t = Date.parse(at);
+  if (t > Date.now() + FUTURE_TOLERANCE_MS) return "La fecha no puede ser futura";
+  if (prev && t < Date.parse(prev)) return "La fecha es anterior al cambio previo del historial";
+  if (next && t > Date.parse(next)) return "La fecha es posterior al cambio siguiente del historial";
+  return null;
+}
+
+const lastAt = (history: { at: string | null }[]) =>
+  history.reduce<string | null>((m, e) => (e.at && (!m || e.at > m) ? e.at : m), null);
+
+/** Renglones vecinos (con fecha) del renglón `eventId`, en el orden en que se capturaron. */
+function neighbours<E extends { id: number; at: string | null }>(history: E[], eventId: number) {
+  const i = history.findIndex((e) => e.id === eventId);
+  if (i < 0) return null;
+  const before = history.slice(0, i).reverse().find((e) => e.at)?.at ?? null;
+  const after = history.slice(i + 1).find((e) => e.at)?.at ?? null;
+  return { before, after, isLast: i === history.length - 1 };
+}
+
+const eventIdParam = (c: Context) => Number(c.req.param("eventId"));
+
 // --- Muestras ---------------------------------------------------------------
 
 app.get("/samples", async (c) => {
@@ -186,11 +215,14 @@ app.get("/samples/:id", async (c) => {
 app.post("/samples", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.createSample);
   if (body instanceof Response) return body;
-  const { stage, note, ...fields } = body;
+  const { stage, note, at, ...fields } = body;
   if (endBeforeStart(fields.conditioningStart, fields.conditioningEnd)) {
     return fail(c, 422, "validation_error", "El fin del acondicionamiento es anterior a su inicio");
   }
-  const id = await db.createSample(c.env.DB, fields, stage, note ?? "", now());
+  const t = now();
+  const bad = at && badEventDate(at);
+  if (bad) return fail(c, 422, "validation_error", bad);
+  const id = await db.createSample(c.env.DB, fields, stage, note ?? "", at ?? t, t);
   c.header("Location", `/api/v1/samples/${id}`);
   return c.json({ data: await db.getSample(c.env.DB, id) }, 201);
 });
@@ -217,11 +249,26 @@ app.delete("/samples/:id", editorOnly, async (c) => {
 app.post("/samples/:id/stage-changes", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.stageChange);
   if (body instanceof Response) return body;
-  const id = idParam(c);
-  if (!(await db.changeStage(c.env.DB, id, body.stage, body.note ?? "", now()))) {
-    return fail(c, 404, "not_found", "Muestra no encontrada");
-  }
-  return c.json({ data: await db.getSample(c.env.DB, id) }, 201);
+  const current = await db.getSample(c.env.DB, idParam(c));
+  if (!current) return fail(c, 404, "not_found", "Muestra no encontrada");
+  const t = now();
+  const at = body.at ?? t;
+  const bad = badEventDate(at, lastAt(current.history));
+  if (bad) return fail(c, 422, "validation_error", bad);
+  await db.changeStage(c.env.DB, current.id, body.stage, body.note ?? "", at, t);
+  return c.json({ data: await db.getSample(c.env.DB, current.id) }, 201);
+});
+
+app.patch("/samples/:id/events/:eventId", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.eventEdit);
+  if (body instanceof Response) return body;
+  const current = await db.getSample(c.env.DB, idParam(c));
+  const near = current && neighbours(current.history, eventIdParam(c));
+  if (!current || !near) return fail(c, 404, "not_found", "Cambio de etapa no encontrado");
+  const bad = body.at && badEventDate(body.at, near.before, near.after);
+  if (bad) return fail(c, 422, "validation_error", bad);
+  await db.editStageEvent(c.env.DB, current.id, eventIdParam(c), body, near.isLast, current.stage, now());
+  return c.json({ data: await db.getSample(c.env.DB, current.id) });
 });
 
 // --- Cotizaciones -----------------------------------------------------------
@@ -234,8 +281,11 @@ app.get("/quotes/:id", async (c) => {
 app.post("/quotes", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.createQuote);
   if (body instanceof Response) return body;
-  const { status, note, ...fields } = body;
-  const id = await db.createQuote(c.env.DB, fields, status, note ?? "", now());
+  const { status, note, at, ...fields } = body;
+  const t = now();
+  const bad = at && badEventDate(at);
+  if (bad) return fail(c, 422, "validation_error", bad);
+  const id = await db.createQuote(c.env.DB, fields, status, note ?? "", at ?? t, t);
   c.header("Location", `/api/v1/quotes/${id}`);
   return c.json({ data: await db.getQuote(c.env.DB, id) }, 201);
 });
@@ -256,11 +306,26 @@ app.delete("/quotes/:id", editorOnly, async (c) => {
 app.post("/quotes/:id/status-changes", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.quoteStatusChange);
   if (body instanceof Response) return body;
-  const id = idParam(c);
-  if (!(await db.changeQuoteStatus(c.env.DB, id, body.status, body.note ?? "", now()))) {
-    return fail(c, 404, "not_found", "Cotización no encontrada");
-  }
-  return c.json({ data: await db.getQuote(c.env.DB, id) }, 201);
+  const current = await db.getQuote(c.env.DB, idParam(c));
+  if (!current) return fail(c, 404, "not_found", "Cotización no encontrada");
+  const t = now();
+  const at = body.at ?? t;
+  const bad = badEventDate(at, lastAt(current.history));
+  if (bad) return fail(c, 422, "validation_error", bad);
+  await db.changeQuoteStatus(c.env.DB, current.id, body.status, body.note ?? "", at, t);
+  return c.json({ data: await db.getQuote(c.env.DB, current.id) }, 201);
+});
+
+app.patch("/quotes/:id/events/:eventId", editorOnly, async (c) => {
+  const body = await parseBody(c, schemas.eventEdit);
+  if (body instanceof Response) return body;
+  const current = await db.getQuote(c.env.DB, idParam(c));
+  const near = current && neighbours(current.history, eventIdParam(c));
+  if (!current || !near) return fail(c, 404, "not_found", "Cambio de estado no encontrado");
+  const bad = body.at && badEventDate(body.at, near.before, near.after);
+  if (bad) return fail(c, 422, "validation_error", bad);
+  await db.editQuoteEvent(c.env.DB, current.id, eventIdParam(c), body, near.isLast, now());
+  return c.json({ data: await db.getQuote(c.env.DB, current.id) });
 });
 
 // --- Actividades (registro de tiempo) ---------------------------------------

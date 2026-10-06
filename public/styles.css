@@ -38,7 +38,7 @@ button:disabled{opacity:.5;cursor:default}
 .kpi span{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .kpi.late b{color:var(--late)} .kpi.warn b{color:var(--warn)}
 .board-scroll{overflow-x:auto;padding-bottom:6px}
-.board{display:grid;grid-template-columns:repeat(9,minmax(190px,1fr));gap:10px;min-width:min-content;align-items:start}
+.board{display:grid;grid-template-columns:repeat(var(--cols,10),minmax(190px,1fr));gap:10px;min-width:min-content;align-items:start}
 .board.quotes{grid-template-columns:repeat(5,minmax(220px,1fr))}
 .phase{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-bottom:2px solid var(--g-admin);padding:2px 4px}
 .phase.eval{border-bottom-color:var(--g-eval)}
@@ -81,9 +81,9 @@ button:disabled{opacity:.5;cursor:default}
 .sec{display:flex;flex-direction:column;gap:8px}
 .sec h4{margin:0;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-form.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-form.grid label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted)}
-form.grid .full{grid-column:1/-1}
+form.grid,div.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+form.grid label,div.grid label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted)}
+form.grid .full,div.grid .full{grid-column:1/-1}
 @media (max-width:900px){.avg{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:720px){
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -92,7 +92,7 @@ form.grid .full{grid-column:1/-1}
   .avg{grid-template-columns:repeat(2,minmax(0,1fr))}
   .col.is-empty .who,.col.is-empty .empty{display:none}
   .col.is-empty{padding:4px 8px;opacity:.75}
-  form.grid{grid-template-columns:1fr}
+  form.grid,div.grid{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
@@ -125,10 +125,16 @@ form.grid .full{grid-column:1/-1}
 .clock{font-family:var(--f-mono);font-size:1.1rem;font-variant-numeric:tabular-nums}
 fieldset.checks{border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
 fieldset.checks legend{font-size:.78rem;color:var(--muted);padding:0 4px}
+fieldset.dates{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+fieldset.dates legend{font-size:.78rem;color:var(--muted);padding:0 4px}
 label.check{flex-direction:row!important;align-items:center;gap:8px!important;font-size:.88rem!important;color:var(--fg)!important}
 textarea{font:inherit;resize:vertical}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.9rem}
 button.link{background:none;border:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline}
+button.link.small{font-size:.78rem;font-weight:500;margin-left:6px}
+.ev-edit{padding:4px 0}
+.remind{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:.9rem}
+.remind>span{flex:1 1 260px}
 .charts{display:grid;grid-template-columns:3fr 2fr;gap:12px}
 .panel{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .panel figcaption{font-family:var(--f-display);font-weight:600;font-size:1rem}

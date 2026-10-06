@@ -27,6 +27,8 @@ let version = 0;
 let role = "editor";
 let seq = 0;
 const newId = () => `demo-${++seq}`;
+let evSeq = 0;
+const ev = (e) => ({ id: ++evSeq, ...e });
 
 /** Avanza n días hábiles y fija una hora del día (9 a 17 h). */
 function stepBusiness(d, n, r) {
@@ -68,9 +70,10 @@ function generate(catalog, now) {
       if (fate < 0.65) path.push(["comprada", (t = stepBusiness(t, 1 + Math.floor(r() * 3), r))]);
       else if (fate < 0.8) path.push(["perdida", (t = stepBusiness(t, 3 + Math.floor(r() * 4), r))]);
       const done = path.filter(([, at]) => at.getTime() <= nowMs);
-      q.history = done.map(([status, at]) => ({ status, at: at.toISOString(), note: "" }));
+      q.history = done.map(([status, at]) => ev({ status, at: at.toISOString(), note: "" }));
       const last = q.history[q.history.length - 1];
-      Object.assign(q, { status: last.status, statusSince: last.at, createdAt: q.history[0].at, updatedAt: last.at });
+      const bought = q.history.find((h) => h.status === "comprada");
+      Object.assign(q, { status: last.status, statusSince: last.at, poReceivedAt: bought?.at ?? null, createdAt: q.history[0].at, updatedAt: last.at });
       quotes.push(q);
       if (q.status === "comprada") for (const test of qTests) samples.push(makeSample(r, test, q, new Date(last.at), nowMs, true));
     }
@@ -89,7 +92,7 @@ function makeSample(r, test, q, start, nowMs, adminByMe) {
   const testByMe = r() < 0.8;
   const flame = test === "Flamabilidad Horizontal";
   const steps = adminByMe
-    ? [["vobo", 0], ["maquinado", 1 + Math.floor(r() * 2)], ["probetas", 2 + Math.floor(r() * 3)], ["recibido", Math.floor(r() * 2)]]
+    ? [["recibo_muestra", 0], ["vobo", Math.floor(r() * 2)], ["maquinado", 1 + Math.floor(r() * 2)], ["probetas", 2 + Math.floor(r() * 3)], ["recibido", Math.floor(r() * 2)]]
     : [["recibido", 0]];
   // Flamabilidad: de 1 a 7 días; de vez en cuando se pasa para que se vea el aviso.
   const condDays = flame ? (r() < 0.15 ? 8 : 1 + Math.floor(r() * 6)) : 1 + Math.floor(r() * 2);
@@ -98,7 +101,7 @@ function makeSample(r, test, q, start, nowMs, adminByMe) {
   let t = new Date(start);
   for (const [stage, gap] of steps) {
     t = gap ? stepBusiness(t, gap, r) : new Date(t.getTime() + (1 + r() * 3) * 36e5);
-    events.push({ stage, at: t.toISOString(), note: "" });
+    events.push(ev({ stage, at: t.toISOString(), note: "" }));
   }
   const history = events.filter((e) => Date.parse(e.at) <= nowMs);
   if (!history.length) history.push({ ...events[0], at: new Date(Math.min(nowMs - 36e5, Date.parse(events[0].at))).toISOString() });
@@ -168,6 +171,7 @@ function linkFor(r, kind, quotes, samples, t) {
 
 export function startDemo(catalog, asRole = "editor") {
   seq = 0;
+  evSeq = 0;
   role = asRole;
   db = generate(catalog, new Date());
   version++;
@@ -186,11 +190,39 @@ const fail = (status, message) => {
 const clone = (x) => structuredClone(x);
 const changed = () => version++;
 
-function changeStage(s, stage, note, now) {
-  if (stage === "acondicionando" && !s.conditioningStart) s.conditioningStart = now;
-  if (s.stage === "acondicionando" && stage !== "acondicionando" && !s.conditioningEnd) s.conditioningEnd = now;
-  Object.assign(s, { stage, stageSince: now, deliveredAt: stage === "entregado" ? now : null, updatedAt: now });
-  s.history.push({ stage, at: now, note: note || "" });
+function changeStage(s, stage, note, at) {
+  if (stage === "acondicionando" && !s.conditioningStart) s.conditioningStart = at;
+  if (s.stage === "acondicionando" && stage !== "acondicionando" && !s.conditioningEnd) s.conditioningEnd = at;
+  Object.assign(s, { stage, stageSince: at, deliveredAt: stage === "entregado" ? at : null, updatedAt: at });
+  s.history.push(ev({ stage, at, note: note || "" }));
+}
+
+function changeStatus(q, status, note, at) {
+  Object.assign(q, { status, statusSince: at, updatedAt: at });
+  if (status === "comprada" && !q.poReceivedAt) q.poReceivedAt = at;
+  q.history.push(ev({ status, at, note: note || "" }));
+}
+
+/** Mismas reglas que el servidor para fechas de cambios: no futuras y en orden. */
+function checkAt(at, prev, next) {
+  const t = Date.parse(at);
+  if (t > Date.now() + 5 * 6e4) fail(422, "La fecha no puede ser futura");
+  if (prev && t < Date.parse(prev)) fail(422, "La fecha es anterior al cambio previo del historial");
+  if (next && t > Date.parse(next)) fail(422, "La fecha es posterior al cambio siguiente del historial");
+}
+
+/** Corrige un renglón del historial; si es el último, mueve "desde cuándo". */
+function editEvent(item, eventId, body, sinceKey) {
+  const i = item.history.findIndex((e) => e.id === eventId);
+  if (i < 0) fail(404, "Cambio no encontrado");
+  if (body.at) checkAt(body.at, item.history[i - 1]?.at, item.history[i + 1]?.at);
+  const e = item.history[i];
+  if (body.at) e.at = body.at;
+  if (body.note !== undefined) e.note = body.note;
+  if (i === item.history.length - 1 && body.at) {
+    item[sinceKey] = body.at;
+    if (item.stage === "entregado") item.deliveredAt = body.at;
+  }
 }
 
 function setRunning(a) {
@@ -202,7 +234,7 @@ function setRunning(a) {
 /** Mismas rutas y respuestas que el servidor, sobre los datos en memoria. */
 export async function demoApi(path, { method = "GET", body, headers = {} } = {}) {
   const now = new Date().toISOString();
-  const [, kind, id, sub] = path.split("/");
+  const [, kind, id, sub, subId] = path.split("/");
   const write = method !== "GET";
   if (kind === "session") return method === "DELETE" ? noContent() : ok({ role });
   if (write && role !== "editor") fail(403, "Solo lectura");
@@ -212,15 +244,19 @@ export async function demoApi(path, { method = "GET", body, headers = {} } = {})
   }
   if (kind === "samples") {
     if (method === "POST" && !id) {
-      const { stage = "vobo", note = "", ...fields } = body;
+      const { stage = "recibo_muestra", note = "", at = now, ...fields } = body;
+      checkAt(at);
       const s = { id: newId(), quoteId: null, adminByMe: true, testByMe: true, conditioningStart: null, conditioningEnd: null, ...fields, createdAt: now, history: [] };
-      changeStage(s, stage, note, now);
+      changeStage(s, stage, note, at);
       db.samples.push(s);
       changed();
       return ok(clone(s), 201);
     }
     const s = db.samples.find((x) => x.id === id) ?? fail(404, "Muestra no encontrada");
-    if (sub === "stage-changes") changeStage(s, body.stage, body.note, now);
+    if (sub === "stage-changes") {
+      checkAt(body.at ?? now, s.history.at(-1)?.at);
+      changeStage(s, body.stage, body.note, body.at ?? now);
+    } else if (sub === "events") editEvent(s, Number(subId), body, "stageSince");
     else if (method === "PATCH") Object.assign(s, body, { updatedAt: now });
     else if (method === "DELETE") {
       db.samples = db.samples.filter((x) => x !== s);
@@ -233,17 +269,20 @@ export async function demoApi(path, { method = "GET", body, headers = {} } = {})
   }
   if (kind === "quotes") {
     if (method === "POST" && !id) {
-      const { status = "elaboracion", note = "", ...fields } = body;
-      const q = { id: newId(), number: "", client: "", salesRep: "", tests: "", notes: "", ...fields, status, statusSince: now, createdAt: now, updatedAt: now, history: [{ status, at: now, note }] };
+      const { status = "elaboracion", note = "", at = now, ...fields } = body;
+      checkAt(at);
+      const q = { id: newId(), number: "", client: "", salesRep: "", tests: "", notes: "", poReceivedAt: null, ...fields, createdAt: now, history: [] };
+      changeStatus(q, status, note, at);
       db.quotes.push(q);
       changed();
       return ok(clone(q), 201);
     }
     const q = db.quotes.find((x) => x.id === id) ?? fail(404, "Cotización no encontrada");
     if (sub === "status-changes") {
-      Object.assign(q, { status: body.status, statusSince: now, updatedAt: now });
-      q.history.push({ status: body.status, at: now, note: body.note || "" });
-    } else if (method === "PATCH") Object.assign(q, body, { updatedAt: now });
+      checkAt(body.at ?? now, q.history.at(-1)?.at);
+      changeStatus(q, body.status, body.note, body.at ?? now);
+    } else if (sub === "events") editEvent(q, Number(subId), body, "statusSince");
+    else if (method === "PATCH") Object.assign(q, body, { updatedAt: now });
     else if (method === "DELETE") {
       db.quotes = db.quotes.filter((x) => x !== q);
       for (const x of [...db.samples, ...db.activities]) if (x.quoteId === id) x.quoteId = null;
