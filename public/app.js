@@ -18,7 +18,7 @@ function renderReminder() {
   if (!due.length) return void (box.innerHTML = "");
   const names = due.slice(0, 4).map((q) => q.number || q.client || "sin número").join(", ") + (due.length > 4 ? "…" : "");
   const n = state.catalog.followUpDays;
-  box.innerHTML = `<span><b>${due.length === 1 ? "1 cotización lleva" : `${due.length} cotizaciones llevan`} ${n} días o más sin seguimiento:</b> ${esc(names)}</span>
+  box.innerHTML = `<span><b>${due.length === 1 ? "1 cotización lleva" : `${due.length} cotizaciones llevan`} ${n} días o más sin seguimiento</b><span class="names">: ${esc(names)}</span></span>
     <button id="remindBtn">Ver cotizaciones</button>`;
   $("remindBtn").onclick = () => selectView("cotizaciones");
 }
