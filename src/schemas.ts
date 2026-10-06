@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACTIVITY_TYPE_KEYS, QUOTE_STATUS_KEYS, STAGE_KEYS, TESTS } from "./catalog";
+import { ACTIVITY_TYPE_KEYS, QUOTE_STATUS_KEYS, STAGE_KEYS } from "./catalog";
 
 const text = (max: number) => z.string().trim().max(max);
 
@@ -12,7 +12,8 @@ const isoDay = z.string().refine((s) => {
 /** Fecha y hora ISO 8601 con zona (la página manda toISOString()). */
 const isoDateTime = z.iso.datetime({ offset: true, message: "Fecha y hora inválidas" });
 
-const testName = z.union([z.enum(TESTS), z.literal("")], { message: "Elige una prueba de la lista" });
+/** La lista del catálogo es una sugerencia: también se aceptan pruebas escritas a mano. */
+const testName = text(200);
 
 /** Campos editables de una muestra. */
 export const sampleFields = z.object({

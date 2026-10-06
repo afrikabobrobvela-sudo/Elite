@@ -15,7 +15,7 @@ test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ 
   await login(rodrigo, "clave-editor");
   await rodrigo.getByRole("button", { name: "Nueva muestra" }).click();
   await rodrigo.getByLabel("Muestra", { exact: true }).fill(code);
-  await rodrigo.getByLabel("Prueba", { exact: true }).selectOption("FTIR");
+  await rodrigo.getByLabel("Prueba", { exact: true }).fill("FTIR");
   await rodrigo.getByLabel("Cliente", { exact: true }).fill("Cliente de prueba");
   await rodrigo.getByLabel("Recepción de probetas (fecha y hora)", { exact: true }).fill("2026-10-05T09:30");
   await rodrigo.getByLabel("Días hábiles comprometidos", { exact: true }).fill("7");
@@ -67,9 +67,22 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await page.getByLabel("Elegir estado", { exact: true }).selectOption("comprada");
   await page.getByRole("button", { name: "Mover" }).click();
   await expect(page.getByRole("dialog").getByText("Estado: Comprada")).toBeVisible();
-  await page.getByRole("button", { name: "Agregar muestra de esta cotización" }).click();
+
+  // Una prueba que va para otro consultor, escrita a mano (no está en la lista).
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Prueba", { exact: true }).fill("Resistencia a sustancias químicas");
+  await dialog.getByLabel("Consultor", { exact: true }).fill("Consultor B");
+  await dialog.getByRole("button", { name: "Agregar prueba" }).click();
+  await expect(dialog.getByRole("button", { name: "Resistencia a sustancias químicas" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Resistencia a sustancias químicas" }).click();
+  await expect(page.getByLabel("Reporte prometido para", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cerrar" }).click();
+
+  // Y una propia con todos los datos.
+  await page.locator("#quoteBoard .card", { hasText: number }).click();
+  await page.getByRole("button", { name: "Agregar con todos los datos" }).click();
   await page.getByLabel("Muestra", { exact: true }).fill(`M-${number}`);
-  await page.getByLabel("Prueba", { exact: true }).selectOption("Flamabilidad Horizontal");
+  await page.getByLabel("Prueba", { exact: true }).fill("Flamabilidad Horizontal");
   await page.getByRole("button", { name: "Agregar muestra", exact: true }).click();
   await expect(page.getByRole("heading", { name: `M-${number}` })).toBeVisible();
   await page.getByRole("button", { name: "Cerrar" }).click();

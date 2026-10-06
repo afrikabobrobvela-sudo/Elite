@@ -130,6 +130,7 @@ fieldset.dates legend{font-size:.78rem;color:var(--muted);padding:0 4px}
 label.check{flex-direction:row!important;align-items:center;gap:8px!important;font-size:.88rem!important;color:var(--fg)!important}
 textarea{font:inherit;resize:vertical}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.9rem}
+ul.plain.tests button.link{text-align:left}
 button.link{background:none;border:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline}
 button.link.small{font-size:.78rem;font-weight:500;margin-left:6px}
 .ev-edit{padding:4px 0}

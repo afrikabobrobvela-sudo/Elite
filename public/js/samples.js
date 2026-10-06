@@ -3,7 +3,7 @@ import { addBusinessDays, dueStatus } from "/business-days.js";
 import {
   $, activityMs, activityTypeOf, ago, applySizes, api, canWrite, conditioningInfo, deleteBlock, esc, fmtHours, fmtTs,
   fromLocalInput, isMine, matchesQuery, mutate, openSheet, quoteById, registerSheet, stageIdx, stageOf, stages, state,
-  timelineHtml, toLocalInput, turnLabel, whenInput, whenValue,
+  testDatalist, timelineHtml, toLocalInput, turnLabel, whenInput, whenValue,
 } from "./core.js";
 
 let filter = "todas"; // todas | mias | otros
@@ -92,8 +92,7 @@ registerSheet("sample", (open) => {
   const limit = state.catalog.conditioningLimits[m.test];
   const input = (k, label, type = "text", cls = "", value = m[k]) =>
     `<label class="${cls}">${label}<input id="f_${k}" type="${type}" value="${esc(value ?? "")}" ${dis}></label>`;
-  const tests = [...state.catalog.tests];
-  if (m.test && !tests.includes(m.test)) tests.unshift(m.test); // dato anterior a la lista
+  const other = m.testByMe === false; // la prueba la hace otro consultor
   const linked = state.activities.filter((a) => a.sampleId === m.id);
   const linkedMs = linked.reduce((t, a) => t + activityMs(a), 0);
 
@@ -138,12 +137,13 @@ registerSheet("sample", (open) => {
       <label>Cotización<select id="f_quoteId" aria-label="Cotización" ${dis}><option value="">Sin vincular</option>${state.quotes.map((x) => `<option value="${esc(x.id)}" ${x.id === m.quoteId ? "selected" : ""}>${esc(x.number || "Sin número")} · ${esc(x.client)}</option>`).join("")}</select></label>
       ${input("quote", "Número de cotización")}
       ${input("client", "Cliente")}
-      <label class="full">Prueba<select id="f_test" aria-label="Prueba" ${dis}><option value="">Elige una prueba</option>${tests.map((t) => `<option ${t === m.test ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      <label class="full">Prueba<input id="f_test" list="testList" maxlength="200" value="${esc(m.test ?? "")}" placeholder="Elige de la lista o escríbela" ${dis}></label>
+      ${testDatalist()}
       ${input("standard", "Norma")}${input("consultant", "Consultor")}
       ${input("salesRep", "Vendedor")}
-      ${input("receivedAt", "Recepción de probetas (fecha y hora)", "datetime-local", "", toLocalInput(m.receivedAt))}
-      ${input("businessDays", "Días hábiles comprometidos", "number")}
-      ${input("dueOn", "Fecha compromiso", "date")}
+      ${input("receivedAt", other ? "Entregué probetas al consultor (fecha y hora)" : "Recepción de probetas (fecha y hora)", "datetime-local", "", toLocalInput(m.receivedAt))}
+      ${input("businessDays", other ? "Días hábiles que pidió el consultor" : "Días hábiles comprometidos", "number")}
+      ${input("dueOn", other ? "Reporte prometido para" : "Fecha compromiso", "date")}
       <fieldset class="full checks"><legend>¿Qué parte te toca?</legend>
         <label class="check"><input type="checkbox" id="f_adminByMe" ${m.adminByMe ? "checked" : ""} ${dis}> La parte administrativa (recibo, VoBo, maquinado, entrega de probetas)</label>
         <label class="check"><input type="checkbox" id="f_testByMe" ${m.testByMe ? "checked" : ""} ${dis}> Las pruebas y el reporte</label>
@@ -200,7 +200,7 @@ registerSheet("sample", (open) => {
       if (!canWrite()) return;
       const body = {};
       for (const k of ["code", "quote", "client", "standard", "consultant", "salesRep"]) body[k] = $("f_" + k).value.trim();
-      body.test = $("f_test").value;
+      body.test = $("f_test").value.trim();
       body.quoteId = $("f_quoteId").value || null;
       body.receivedAt = fromLocalInput(rec.value);
       body.dueOn = due.value || null;

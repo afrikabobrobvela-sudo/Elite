@@ -294,6 +294,10 @@ export function whenValue(id) {
   return fromLocalInput(el.value);
 }
 
+/** Sugerencias de pruebas del catálogo para un <input list="testList">. */
+export const testDatalist = () =>
+  `<datalist id="testList">${state.catalog.tests.map((t) => `<option value="${esc(t)}"></option>`).join("")}</datalist>`;
+
 export const matchesQuery = (...fields) => !state.query || fields.join(" ").toLowerCase().includes(state.query);
 
 /** La CSP bloquea style="" en el HTML; los tamaños van en data-* y se aplican por el DOM. */

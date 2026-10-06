@@ -100,7 +100,7 @@ describe("muestras", () => {
     const editor = await login("clave-editor");
     const bad = await api(editor, "/samples", {
       method: "POST",
-      body: JSON.stringify({ stage: "inventada", dueOn: "14/10/2026", test: "Dureza", receivedAt: "2026-10-05" }),
+      body: JSON.stringify({ stage: "inventada", dueOn: "14/10/2026", test: "x".repeat(201), receivedAt: "2026-10-05" }),
     });
     expect(bad.status).toBe(422);
     const body = (await bad.json()) as { error: { details: { field: string }[] } };

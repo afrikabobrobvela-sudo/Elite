@@ -2,7 +2,8 @@
 import { businessDaysBetween } from "/business-days.js";
 import {
   $, activityMs, activityTypeOf, ago, api, canWrite, deleteBlock, esc, fmtHours, fmtTs, fromLocalInput, matchesQuery,
-  mutate, openSheet, quoteStatusOf, registerSheet, stageOf, state, timelineHtml, toLocalInput, whenInput, whenValue,
+  mutate, openSheet, quoteStatusOf, registerSheet, stageOf, state, testDatalist, timelineHtml, toLocalInput, turnLabel,
+  whenInput, whenValue,
 } from "./core.js";
 
 const OPEN = ["elaboracion", "enviada", "seguimiento"];
@@ -84,6 +85,17 @@ function card(q) {
   </article>`;
 }
 
+/** Renglón de una prueba de la cotización: etapa, de quién depende y fechas clave con otro consultor. */
+function testRow(s) {
+  const turn = turnLabel(s);
+  const extra = !s.testByMe
+    ? [s.receivedAt && `probetas entregadas ${fmtTs(s.receivedAt)}`, s.dueOn && `reporte prometido ${fmtTs(s.dueOn)}`].filter(Boolean).join(" · ")
+    : "";
+  return `<li><button class="link" data-open="sample" data-id="${esc(s.id)}">${esc(s.test || "Prueba sin definir")}</button>
+    ${s.code ? ` · ${esc(s.code)}` : ""}${!s.testByMe && s.consultant ? ` · ${esc(s.consultant)}` : ""} · <b>${esc(stageOf(s.stage).name)}</b>${turn ? ` · ${esc(turn.t)}` : ""}
+    ${extra ? `<div class="note">${esc(extra)}</div>` : ""}</li>`;
+}
+
 export function bindQuoteControls() {
   $("addQuoteBtn").addEventListener("click", () => openSheet("quote"));
 }
@@ -125,9 +137,16 @@ registerSheet("quote", (open) => {
         ? `De la cotización a la entrega de probetas al consultor: <b>${businessDaysBetween(new Date(span.from), new Date(span.to))} días hábiles</b>.`
         : `Abierta hace ${esc(ago(span.from))}; sus probetas todavía no llegan al consultor.`}
         Tiempo que registraste en esta cotización: <b>${fmtHours(actMs)}</b>.</p></div>`}
-    ${isNew ? "" : `<div class="sec"><h4>Muestras de esta cotización</h4>
-      ${samples.length ? `<ul class="plain">${samples.map((s) => `<li><button class="link" data-open="sample" data-id="${esc(s.id)}">${esc(s.code || "Sin número")}</button> · ${esc(s.test)} · <b>${esc(stageOf(s.stage).name)}</b></li>`).join("")}</ul>` : `<p class="note">Todavía no hay muestras. Agrégalas cuando el cliente compre.</p>`}
-      ${canWrite() ? `<div class="row"><button id="qAddSample">Agregar muestra de esta cotización</button></div>` : ""}</div>`}
+    ${isNew ? "" : `<div class="sec"><h4>Pruebas de esta cotización</h4>
+      ${samples.length ? `<ul class="plain tests">${samples.map(testRow).join("")}</ul>` : `<p class="note">Todavía no hay pruebas. Agrégalas aquí; cada una se sigue como muestra en el tablero.</p>`}
+      ${canWrite() ? `<form class="grid" id="qTestForm">
+          <label class="full">Prueba<input id="qt_test" list="testList" maxlength="200" required placeholder="Elige de la lista o escríbela"></label>
+          ${testDatalist()}
+          <label>Consultor<input id="qt_consultant" maxlength="100" placeholder="Vacío si la haces tú"></label>
+          <label>Muestra<input id="qt_code" maxlength="40" placeholder="Opcional"></label>
+          <div class="row full"><button class="primary" type="submit">Agregar prueba</button><button type="button" id="qAddSample">Agregar con todos los datos</button></div>
+        </form>
+        <p class="note">Si pones otro consultor, la prueba queda como suya: registras cuándo le entregaste probetas y para cuándo prometió el reporte, y el tiempo cuenta como espera de otros.</p>` : ""}</div>`}
     ${isNew ? "" : `<div class="sec"><h4>Historial</h4>${timelineHtml(q.history.map((h) => ({ id: h.id, key: h.status, label: quoteStatusOf(h.status)?.name || h.status, at: h.at, note: h.note })), "perdida", `/quotes/${q.id}`)}</div>`}
     ${acts.length ? `<div class="sec"><h4>Tiempo registrado</h4><ul class="plain">${acts.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
@@ -159,6 +178,16 @@ registerSheet("quote", (open) => {
     if ($("qFollowBtn")) $("qFollowBtn").onclick = () => moveTo("seguimiento");
     if ($("qSetBtn")) $("qSetBtn").onclick = () => $("qStatusSel").value !== q.status && moveTo($("qStatusSel").value);
     if ($("qAddSample")) $("qAddSample").onclick = () => openSheet("sample", "", { quoteId: q.id });
+    $("qTestForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const consultant = $("qt_consultant").value.trim();
+      const mine = !consultant || /^rodrigo$/i.test(consultant);
+      const body = {
+        test: $("qt_test").value.trim(), code: $("qt_code").value.trim(), consultant: consultant || "Rodrigo",
+        quoteId: q.id, quote: q.number, client: q.client, salesRep: q.salesRep, adminByMe: true, testByMe: mine,
+      };
+      await mutate(() => api("/samples", { method: "POST", body }));
+    });
     $("quoteForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!canWrite()) return;
