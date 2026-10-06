@@ -373,3 +373,32 @@ describe("catálogo", () => {
     expect((await worker.fetch(`${BASE}/board`)).status).toBe(401);
   });
 });
+
+describe("acondicionamiento", () => {
+  type S = { id: string; conditioningStart: string | null; conditioningEnd: string | null; history: { id: number; stage: string; at: string }[] };
+  const read = async (res: Response) => ((await res.json()) as { data: S }).data;
+  const day = (n: number, h = 10) => new Date(Date.UTC(2026, 9, n, h)).toISOString();
+
+  it("corregir inicio y fin mueve el historial, y corregir el historial mueve inicio y fin", async () => {
+    const editor = await login("clave-editor");
+    const post = (path: string, body: unknown, method = "POST") => api(editor, path, { method, body: JSON.stringify(body) });
+    let s = await read(await post("/samples", { code: "M-AC", test: "Flamabilidad Horizontal", stage: "recibido", at: day(1) }));
+    await post(`/samples/${s.id}/stage-changes`, { stage: "acondicionando", at: day(2) });
+    s = await read(await post(`/samples/${s.id}/stage-changes`, { stage: "prueba", at: day(4) }));
+    expect(s.conditioningStart).toBe(day(2));
+    expect(s.conditioningEnd).toBe(day(4));
+
+    s = await read(await post(`/samples/${s.id}`, { conditioningStart: day(1, 15), conditioningEnd: day(3, 12) }, "PATCH"));
+    expect(s.history.map((e) => e.at)).toEqual([day(1), day(1, 15), day(3, 12)]);
+
+    s = await read(await post(`/samples/${s.id}/events/${s.history[2]!.id}`, { at: day(3, 18) }, "PATCH"));
+    expect(s.conditioningEnd).toBe(day(3, 18));
+    s = await read(await post(`/samples/${s.id}/events/${s.history[1]!.id}`, { at: day(1, 20) }, "PATCH"));
+    expect(s.conditioningStart).toBe(day(1, 20));
+
+    // Fechas que no caben en el historial: se guardan los campos, el historial no cambia.
+    s = await read(await post(`/samples/${s.id}`, { conditioningStart: day(1, 5) }, "PATCH"));
+    expect(s.conditioningStart).toBe(day(1, 5));
+    expect(s.history[1]!.at).toBe(day(1, 20));
+  });
+});

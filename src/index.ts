@@ -237,9 +237,33 @@ app.patch("/samples/:id", editorOnly, async (c) => {
   if (endBeforeStart(start, end)) {
     return fail(c, 422, "validation_error", "El fin del acondicionamiento es anterior a su inicio");
   }
-  await db.updateSample(c.env.DB, current.id, body, now());
+  const t = now();
+  await db.updateSample(c.env.DB, current.id, body, t);
+  await syncConditioningEvents(c.env.DB, current, body.conditioningStart ?? null, body.conditioningEnd ?? null, t);
   return c.json({ data: await db.getSample(c.env.DB, current.id) });
 });
+
+/**
+ * Al corregir el inicio o el fin del acondicionamiento, mueve también en el historial la entrada a
+ * "Acondicionando" y el cambio que le sigue, para que ambos digan lo mismo. Si las fechas nuevas
+ * no caben en el orden del historial, solo se guardan los campos.
+ */
+async function syncConditioningEvents(DB: D1Database, s: db.Sample, start: string | null, end: string | null, t: string) {
+  const i = s.history.map((e) => e.stage).lastIndexOf("acondicionando");
+  if (i < 0 || (!start && !end)) return;
+  const ev = s.history[i]!;
+  const next = s.history[i + 1];
+  const newStart = start ?? ev.at;
+  if (!newStart) return;
+  const newEnd = next ? (end ?? next.at) : null;
+  const before = s.history[i - 1]?.at ?? null;
+  const after = s.history[i + 2]?.at ?? null;
+  if (badEventDate(newStart, before, newEnd ?? after) || (newEnd && badEventDate(newEnd, newStart, after))) return;
+  if (start && start !== ev.at) await db.editStageEvent(DB, s.id, ev.id, { at: start }, !next, s.stage, t);
+  if (next && end && end !== next.at) {
+    await db.editStageEvent(DB, s.id, next.id, { at: end }, i + 1 === s.history.length - 1, s.stage, t);
+  }
+}
 
 app.delete("/samples/:id", editorOnly, async (c) => {
   if (!(await db.deleteSample(c.env.DB, idParam(c)))) return fail(c, 404, "not_found", "Muestra no encontrada");
@@ -267,7 +291,10 @@ app.patch("/samples/:id/events/:eventId", editorOnly, async (c) => {
   if (!current || !near) return fail(c, 404, "not_found", "Cambio de etapa no encontrado");
   const bad = body.at && badEventDate(body.at, near.before, near.after);
   if (bad) return fail(c, 422, "validation_error", bad);
-  await db.editStageEvent(c.env.DB, current.id, eventIdParam(c), body, near.isLast, current.stage, now());
+  const i = current.history.findIndex((e) => e.id === eventIdParam(c));
+  const conditioning =
+    current.history[i]?.stage === "acondicionando" ? "start" : current.history[i - 1]?.stage === "acondicionando" ? "end" : null;
+  await db.editStageEvent(c.env.DB, current.id, eventIdParam(c), body, near.isLast, current.stage, now(), conditioning);
   return c.json({ data: await db.getSample(c.env.DB, current.id) });
 });
 

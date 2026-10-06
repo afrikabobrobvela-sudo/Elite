@@ -416,12 +416,18 @@ export async function editStageEvent(
   isLast: boolean,
   stage: StageKey,
   now: string,
+  conditioning: "start" | "end" | null = null,
 ): Promise<boolean> {
   const stmts = [
     db
       .prepare("UPDATE stage_events SET at = COALESCE(?, at), note = COALESCE(?, note) WHERE id = ? AND sample_id = ?")
       .bind(edit.at ?? null, edit.note ?? null, eventId, sampleId),
   ];
+  // El inicio y el fin del acondicionamiento son la entrada a esa etapa y la salida de ella.
+  if (conditioning && edit.at) {
+    const col = conditioning === "start" ? "conditioning_start" : "conditioning_end";
+    stmts.push(db.prepare(`UPDATE samples SET ${col} = ?, updated_at = ? WHERE id = ?`).bind(edit.at, now, sampleId));
+  }
   if (isLast && edit.at) {
     stmts.push(
       db
