@@ -43,6 +43,10 @@ export function adminSpan(q) {
   return { from: q.createdAt, to: received ?? null };
 }
 
+/** Columnas cerradas (compradas, no concretadas): se muestran las más recientes y el resto a pedido. */
+const CLOSED_SHOWN = 8;
+const showAllIn = new Set();
+
 export function renderQuotes() {
   const list = state.quotes.filter((q) => matchesQuery(q.number, q.client, q.salesRep, q.tests, q.notes));
   const open = state.quotes.filter((q) => OPEN.includes(q.status));
@@ -62,10 +66,13 @@ export function renderQuotes() {
       const cards = list
         .filter((q) => q.status === s.key)
         .sort((a, b) => (followUpDue(b) ?? -1) - (followUpDue(a) ?? -1) || String(b.statusSince).localeCompare(String(a.statusSince)));
+      const closed = s.key === "comprada" || s.key === "perdida";
+      const shown = closed && !showAllIn.has(s.key) ? cards.slice(0, CLOSED_SHOWN) : cards;
+      const more = cards.length > shown.length ? `<button class="more" data-qmore="${s.key}">Ver las ${cards.length}</button>` : "";
       return `<section class="col${cards.length ? "" : " is-empty"}" aria-label="${esc(s.name)}">
         <h2><span>${esc(s.name)}</span><span class="n">${cards.length}</span></h2>
         <div class="who">${esc(s.who)}</div>
-        ${cards.length ? cards.map(card).join("") : `<div class="empty">Sin cotizaciones</div>`}</section>`;
+        ${cards.length ? shown.map(card).join("") : `<div class="empty">Sin cotizaciones</div>`}${more}</section>`;
     })
     .join("");
 }
@@ -98,6 +105,10 @@ function testRow(s) {
 
 export function bindQuoteControls() {
   $("addQuoteBtn").addEventListener("click", () => openSheet("quote"));
+  $("quoteBoard").addEventListener("click", (e) => {
+    const m = e.target.closest("[data-qmore]");
+    if (m) { showAllIn.add(m.dataset.qmore); renderQuotes(); }
+  });
 }
 
 registerSheet("quote", (open) => {

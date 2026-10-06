@@ -8,6 +8,7 @@ import { adminSpan } from "./quotes.js";
 
 let periodDays = 7;
 let timelineFilter = "todo";
+let timelineDays = 5; // días visibles de la línea del tiempo; "Ver más días" agrega otros 5
 
 const DAY = 864e5;
 const startOfDay = (t) => {
@@ -176,12 +177,14 @@ function renderTimeline(acts, events) {
     if (!days.has(k)) days.set(k, []);
     days.get(k).push(it);
   }
+  const shown = [...days].slice(0, timelineDays);
+  const hidden = days.size - shown.length;
   $("timeline").innerHTML = days.size
-    ? [...days]
+    ? shown
         .map(
           ([k, list]) => `<section class="tday"><h5>${esc(fmtDayLabel(new Date(k)))}</h5><ul>${list.map(item).join("")}</ul></section>`,
         )
-        .join("")
+        .join("") + (hidden > 0 ? `<button class="more" data-tlmore>Ver más días (${hidden} más)</button>` : "")
     : `<p class="note">Sin movimientos en este periodo.</p>`;
 }
 
@@ -209,7 +212,8 @@ export function bindProductivityControls() {
     const p = e.target.closest("[data-period]");
     if (p) { periodDays = Number(p.dataset.period); renderProductivity(); }
     const f = e.target.closest("[data-tlfilter]");
-    if (f) { timelineFilter = f.dataset.tlfilter; renderProductivity(); }
+    if (f) { timelineFilter = f.dataset.tlfilter; timelineDays = 5; renderProductivity(); }
+    if (e.target.closest("[data-tlmore]")) { timelineDays += 5; renderProductivity(); }
   });
   // Ayuda emergente de las gráficas.
   const tip = $("tip");
