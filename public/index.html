@@ -46,6 +46,8 @@
       <button id="demoReset">Reiniciar datos</button>
     </div>
 
+    <div class="remind" id="remind" role="status" hidden></div>
+
     <div class="actbar" id="activityBar" role="region" aria-label="Actividad en curso" hidden></div>
 
     <nav class="tabs" id="tabs" role="tablist" aria-label="Módulos">
@@ -78,7 +80,7 @@
     <section id="view-cotizaciones" role="tabpanel" aria-labelledby="tab-cotizaciones" class="view" hidden>
       <div class="kpis">
         <div class="kpi"><b id="qOpen">–</b><span>Cotizaciones abiertas</span></div>
-        <div class="kpi accent"><b id="qFollow">–</b><span>En seguimiento</span></div>
+        <div class="kpi warn"><b id="qFollow">–</b><span>Piden seguimiento (15+ días)</span></div>
         <div class="kpi"><b id="qWon">–</b><span>Compradas este mes</span></div>
         <div class="kpi"><b id="qWaiting">–</b><span>Compradas sin probetas al consultor</span></div>
       </div>

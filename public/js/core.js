@@ -240,17 +240,63 @@ export function deleteBlock(what, onConfirm) {
   return { html, bind };
 }
 
-/** Historial vertical: [{label, at, note}] con la duración hasta el siguiente. */
-export function timelineHtml(items, finalKey) {
+/**
+ * Historial vertical: [{id, key, label, at, note}] con la duración hasta el siguiente.
+ * Con `editPath` (p. ej. "/quotes/ID") cada renglón tiene "Corregir" para cambiar fecha y nota.
+ */
+export function timelineHtml(items, finalKey, editPath = null) {
   if (!items.length) return '<ol class="tl"><li><div class="note">Sin registros</div><span></span></li></ol>';
+  const editable = editPath && canWrite();
   return `<ol class="tl">${items
     .map((h, i) => {
       const next = items[i + 1]?.at || (h.key !== finalKey ? new Date().toISOString() : null);
-      return `<li><div><div>${esc(h.label)}</div><div class="when">${esc(fmtTs(h.at))}${h.note ? " · " + esc(h.note) : ""}</div></div>
+      if (editable && open?.editEvent === h.id) {
+        return `<li><form class="grid ev-edit" data-ev-form="${h.id}" data-path="${esc(editPath)}">
+          <div class="full"><b>${esc(h.label)}</b></div>
+          <label>Fecha y hora<input id="ev_at" type="datetime-local" value="${toLocalInput(h.at)}" required></label>
+          <label>Nota<input id="ev_note" maxlength="500" value="${esc(h.note)}"></label>
+          <div class="row full"><button class="primary" type="submit">Guardar</button><button type="button" data-ev-cancel>Cancelar</button></div>
+        </form><span></span></li>`;
+      }
+      return `<li><div><div>${esc(h.label)}</div><div class="when">${esc(fmtTs(h.at))}${h.note ? " · " + esc(h.note) : ""}${
+        editable ? ` <button class="link small" data-ev-edit="${h.id}" aria-label="Corregir fecha de ${esc(h.label)}">Corregir</button>` : ""
+      }</div></div>
         <span class="dur">${h.at && next ? fmtDur(h.at, next) : ""}</span></li>`;
     })
     .join("")}</ol>`;
 }
+
+// Corregir renglones del historial (delegado: sirve para muestras y cotizaciones).
+document.addEventListener("click", (e) => {
+  const edit = e.target.closest("[data-ev-edit]");
+  if (edit && open) { open.editEvent = Number(edit.dataset.evEdit); drawSheet(true); $("ev_at")?.focus(); }
+  if (e.target.closest("[data-ev-cancel]") && open) { open.editEvent = null; drawSheet(true); }
+});
+document.addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-ev-form]");
+  if (!form) return;
+  e.preventDefault();
+  const body = { at: fromLocalInput($("ev_at").value), note: $("ev_note").value.trim() };
+  const res = await mutate(() => api(`${form.dataset.path}/events/${form.dataset.evForm}`, { method: "PATCH", body }));
+  if (res && open) { open.editEvent = null; drawSheet(true); }
+});
+
+/** Campo "cuándo pasó" para registrar algo con fecha pasada. Sin tocar, vale "ahora". */
+export function whenInput(id, label = "Fecha y hora") {
+  const now = toLocalInput(new Date().toISOString());
+  return `<label class="when-field">${esc(label)}<input id="${id}" type="datetime-local" value="${now}" data-initial="${now}"></label>`;
+}
+
+/** ISO del campo, o undefined si quedó en "ahora" (así el servidor usa su propia hora). */
+export function whenValue(id) {
+  const el = $(id);
+  if (!el || !el.value || el.value === el.dataset.initial) return undefined;
+  return fromLocalInput(el.value);
+}
+
+/** Sugerencias de pruebas del catálogo para un <input list="testList">. */
+export const testDatalist = () =>
+  `<datalist id="testList">${state.catalog.tests.map((t) => `<option value="${esc(t)}"></option>`).join("")}</datalist>`;
 
 export const matchesQuery = (...fields) => !state.query || fields.join(" ").toLowerCase().includes(state.query);
 

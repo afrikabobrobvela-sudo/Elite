@@ -73,7 +73,7 @@ describe("muestras", () => {
     });
     expect(created.status).toBe(201);
     const { data: sample } = (await created.json()) as { data: { id: string; stage: string; history: unknown[] } };
-    expect(sample.stage).toBe("vobo");
+    expect(sample.stage).toBe("recibo_muestra");
     expect(sample.history).toHaveLength(1);
 
     const moved = await api(editor, `/samples/${sample.id}/stage-changes`, {
@@ -85,7 +85,7 @@ describe("muestras", () => {
       data: { stage: string; stageSince: string; history: { stage: string; at: string; note: string }[] };
     };
     expect(after.stage).toBe("maquinado");
-    expect(after.history.map((h) => h.stage)).toEqual(["vobo", "maquinado"]);
+    expect(after.history.map((h) => h.stage)).toEqual(["recibo_muestra", "maquinado"]);
     expect(after.history[1]!.note).toBe("VoBo recibido");
     expect(Date.now() - Date.parse(after.stageSince)).toBeLessThan(60_000);
 
@@ -100,7 +100,7 @@ describe("muestras", () => {
     const editor = await login("clave-editor");
     const bad = await api(editor, "/samples", {
       method: "POST",
-      body: JSON.stringify({ stage: "inventada", dueOn: "14/10/2026", test: "Dureza", receivedAt: "2026-10-05" }),
+      body: JSON.stringify({ stage: "inventada", dueOn: "14/10/2026", test: "x".repeat(201), receivedAt: "2026-10-05" }),
     });
     expect(bad.status).toBe(422);
     const body = (await bad.json()) as { error: { details: { field: string }[] } };
@@ -125,6 +125,7 @@ describe("muestras", () => {
       [`/samples/${data.id}`, "PATCH", { code: "X" }],
       [`/samples/${data.id}`, "DELETE", undefined],
       [`/samples/${data.id}/stage-changes`, "POST", { stage: "maquinado" }],
+      [`/samples/${data.id}/events/1`, "PATCH", { note: "X" }],
     ] as const) {
       const res = await api(viewer, path, { method, body: body && JSON.stringify(body) });
       expect(res.status, `${method} ${path}`).toBe(403);
@@ -263,6 +264,46 @@ describe("cotizaciones", () => {
     expect(kept.data.quoteId).toBeNull();
   });
 
+  it("registra fechas pasadas, llegada de la orden de compra y correcciones al historial", async () => {
+    const editor = await login("clave-editor");
+    const post = (path: string, body: unknown) => api(editor, path, { method: "POST", body: JSON.stringify(body) });
+    type Q = { id: string; status: string; statusSince: string; poReceivedAt: string | null; history: { id: number; status: string; at: string }[] };
+    const read = async (res: Response) => ((await res.json()) as { data: Q }).data;
+
+    const q = await read(await post("/quotes", { number: "C26.950", at: "2026-09-01T16:00:00.000Z" }));
+    expect(q.history[0]!.at).toBe("2026-09-01T16:00:00.000Z");
+    await post(`/quotes/${q.id}/status-changes`, { status: "enviada", at: "2026-09-02T16:00:00.000Z" });
+    const bought = await read(await post(`/quotes/${q.id}/status-changes`, { status: "comprada", at: "2026-09-20T16:00:00.000Z" }));
+    expect(bought.statusSince).toBe("2026-09-20T16:00:00.000Z");
+    expect(bought.poReceivedAt).toBe("2026-09-20T16:00:00.000Z");
+
+    // Fuera de orden o en el futuro: rechazado.
+    expect((await post(`/quotes/${q.id}/status-changes`, { status: "perdida", at: "2026-09-10T16:00:00.000Z" })).status).toBe(422);
+    expect((await post(`/quotes/${q.id}/status-changes`, { status: "perdida", at: "2099-01-01T00:00:00.000Z" })).status).toBe(422);
+
+    // Corregir la fecha del último cambio mueve "desde cuándo".
+    const last = bought.history[2]!;
+    const fixed = await read(await api(editor, `/quotes/${q.id}/events/${last.id}`, { method: "PATCH", body: JSON.stringify({ at: "2026-09-19T16:00:00.000Z" }) }));
+    expect(fixed.statusSince).toBe("2026-09-19T16:00:00.000Z");
+    // No puede quedar antes del cambio anterior.
+    const tooEarly = await api(editor, `/quotes/${q.id}/events/${last.id}`, { method: "PATCH", body: JSON.stringify({ at: "2026-08-01T16:00:00.000Z" }) });
+    expect(tooEarly.status).toBe(422);
+
+    // La llegada de la orden de compra se puede capturar aparte.
+    const po = await api(editor, `/quotes/${q.id}`, { method: "PATCH", body: JSON.stringify({ poReceivedAt: "2026-09-18T18:00:00.000Z" }) });
+    expect((await read(po)).poReceivedAt).toBe("2026-09-18T18:00:00.000Z");
+
+    // Muestras: alta con fecha pasada y corrección de un cambio de etapa.
+    const res = await post("/samples", { code: "M26.950", at: "2026-09-21T15:00:00.000Z" });
+    const s = ((await res.json()) as { data: { id: string; stage: string; stageSince: string; history: { id: number }[] } }).data;
+    expect(s.stage).toBe("recibo_muestra");
+    expect(s.stageSince).toBe("2026-09-21T15:00:00.000Z");
+    const edited = await api(editor, `/samples/${s.id}/events/${s.history[0]!.id}`, { method: "PATCH", body: JSON.stringify({ at: "2026-09-21T14:00:00.000Z", note: "Llegó en la mañana" }) });
+    const after = ((await edited.json()) as { data: { stageSince: string; history: { note: string }[] } }).data;
+    expect(after.stageSince).toBe("2026-09-21T14:00:00.000Z");
+    expect(after.history[0]!.note).toBe("Llegó en la mañana");
+  });
+
   it("el jefe no puede crear cotizaciones", async () => {
     const viewer = await login("clave-del-jefe");
     expect((await api(viewer, "/quotes", { method: "POST", body: JSON.stringify({ number: "X" }) })).status).toBe(403);
@@ -317,7 +358,7 @@ describe("catálogo", () => {
       data: { stages: { key: string }[]; tests: string[] };
     };
     expect(data.stages.map((s) => s.key)).toEqual([
-      "vobo", "maquinado", "probetas", "recibido", "acondicionando", "prueba", "reporte", "revision", "entregado",
+      "recibo_muestra", "vobo", "maquinado", "probetas", "recibido", "acondicionando", "prueba", "reporte", "revision", "entregado",
     ]);
     expect(data.tests).toHaveLength(17);
     expect(data.tests).toContain("Prueba de Impacto");

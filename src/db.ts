@@ -2,12 +2,14 @@ import type { ActivityTypeKey, QuoteStatusKey, StageKey } from "./catalog";
 import type { ActivityFields, QuoteFields, SampleFields } from "./schemas";
 
 export interface StageEvent {
+  id: number;
   stage: StageKey;
   at: string | null;
   note: string;
 }
 
 export interface QuoteEvent {
+  id: number;
   status: QuoteStatusKey;
   at: string | null;
   note: string;
@@ -47,6 +49,7 @@ export interface Quote {
   notes: string;
   status: QuoteStatusKey;
   statusSince: string | null;
+  poReceivedAt: string | null;
   createdAt: string;
   updatedAt: string;
   history: QuoteEvent[];
@@ -89,6 +92,7 @@ const QUOTE_COLUMNS: Record<keyof QuoteFields, string> = {
   salesRep: "sales_rep",
   tests: "tests",
   notes: "notes",
+  poReceivedAt: "po_received_at",
 };
 
 const ACTIVITY_COLUMNS: Record<keyof ActivityFields, string> = {
@@ -150,6 +154,7 @@ function toQuote(r: Row, history: QuoteEvent[]): Quote {
     notes: r.notes as string,
     status: r.status as QuoteStatusKey,
     statusSince: (r.status_since as string | null) ?? null,
+    poReceivedAt: (r.po_received_at as string | null) ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
     history,
@@ -179,8 +184,8 @@ function groupBy<E>(rows: Row[], key: string, map: (r: Row) => E): Map<string, E
   return out;
 }
 
-const stageEvent = (e: Row): StageEvent => ({ stage: e.stage as StageKey, at: e.at as string | null, note: e.note as string });
-const quoteEvent = (e: Row): QuoteEvent => ({ status: e.status as QuoteStatusKey, at: e.at as string | null, note: e.note as string });
+const stageEvent = (e: Row): StageEvent => ({ id: e.id as number, stage: e.stage as StageKey, at: e.at as string | null, note: e.note as string });
+const quoteEvent = (e: Row): QuoteEvent => ({ id: e.id as number, status: e.status as QuoteStatusKey, at: e.at as string | null, note: e.note as string });
 
 // --- Tablero ------------------------------------------------------------------
 
@@ -193,9 +198,9 @@ export async function boardVersion(db: D1Database): Promise<number> {
 export async function loadBoard(db: D1Database, activitySince: string) {
   const [samples, stageEvents, quotes, quoteEvents, activities] = await db.batch([
     db.prepare("SELECT * FROM samples ORDER BY created_at"),
-    db.prepare("SELECT sample_id, stage, at, note FROM stage_events ORDER BY id"),
+    db.prepare("SELECT id, sample_id, stage, at, note FROM stage_events ORDER BY id"),
     db.prepare("SELECT * FROM quotes ORDER BY created_at"),
-    db.prepare("SELECT quote_id, status, at, note FROM quote_events ORDER BY id"),
+    db.prepare("SELECT id, quote_id, status, at, note FROM quote_events ORDER BY id"),
     db.prepare("SELECT * FROM activities WHERE started_at >= ? OR ended_at IS NULL ORDER BY started_at").bind(activitySince),
   ]);
   const se = groupBy(stageEvents!.results as Row[], "sample_id", stageEvent);
@@ -216,7 +221,7 @@ export async function listSamples(db: D1Database): Promise<Sample[]> {
 export async function getSample(db: D1Database, id: string): Promise<Sample | null> {
   const [samples, events] = await db.batch([
     db.prepare("SELECT * FROM samples WHERE id = ?").bind(id),
-    db.prepare("SELECT sample_id, stage, at, note FROM stage_events WHERE sample_id = ? ORDER BY id").bind(id),
+    db.prepare("SELECT id, sample_id, stage, at, note FROM stage_events WHERE sample_id = ? ORDER BY id").bind(id),
   ]);
   const row = samples!.results[0] as Row | undefined;
   return row ? toSample(row, (events!.results as Row[]).map(stageEvent)) : null;
@@ -227,6 +232,7 @@ export async function createSample(
   fields: SampleFields,
   stage: StageKey,
   note: string,
+  at: string,
   now: string,
 ): Promise<string> {
   const id = crypto.randomUUID();
@@ -234,12 +240,12 @@ export async function createSample(
   const extra: Record<string, unknown> = {
     id,
     stage,
-    stage_since: now,
-    delivered_at: stage === "entregado" ? now : null,
+    stage_since: at,
+    delivered_at: stage === "entregado" ? at : null,
     created_at: now,
     updated_at: now,
   };
-  if (stage === "acondicionando" && !fields.conditioningStart) extra.conditioning_start = now;
+  if (stage === "acondicionando" && !fields.conditioningStart) extra.conditioning_start = at;
   const allCols = [...cols, ...Object.keys(extra)];
   await db.batch([
     db
@@ -247,7 +253,7 @@ export async function createSample(
       .bind(...values, ...Object.values(extra)),
     db
       .prepare("INSERT INTO stage_events (sample_id, stage, at, note, recorded_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(id, stage, now, note, now),
+      .bind(id, stage, at, note, now),
     bumpVersion(db),
   ]);
   return id;
@@ -265,27 +271,34 @@ export async function updateSample(db: D1Database, id: string, fields: SampleFie
 }
 
 /**
- * Registra el paso a otra etapa con la hora del servidor.
+ * Registra el paso a otra etapa en el momento `at` (ahora, o una fecha pasada).
  * Al entrar a "Acondicionando" se anota el inicio, y al salir de ahí el fin,
  * salvo que ya estuvieran capturados a mano.
  */
-export async function changeStage(db: D1Database, id: string, stage: StageKey, note: string, now: string): Promise<boolean> {
+export async function changeStage(
+  db: D1Database,
+  id: string,
+  stage: StageKey,
+  note: string,
+  at: string,
+  now: string,
+): Promise<boolean> {
   const [result] = await db.batch([
     db
       .prepare(
         `UPDATE samples SET
            conditioning_start = CASE WHEN ?1 = 'acondicionando' AND conditioning_start IS NULL THEN ?2 ELSE conditioning_start END,
            conditioning_end = CASE WHEN stage = 'acondicionando' AND ?1 <> 'acondicionando' AND conditioning_end IS NULL THEN ?2 ELSE conditioning_end END,
-           stage = ?1, stage_since = ?2, delivered_at = CASE WHEN ?1 = 'entregado' THEN ?2 ELSE NULL END, updated_at = ?2
+           stage = ?1, stage_since = ?2, delivered_at = CASE WHEN ?1 = 'entregado' THEN ?2 ELSE NULL END, updated_at = ?4
          WHERE id = ?3`,
       )
-      .bind(stage, now, id),
+      .bind(stage, at, id, now),
     db
       .prepare(
         // Solo inserta si la muestra existe, para no dejar eventos huérfanos.
         "INSERT INTO stage_events (sample_id, stage, at, note, recorded_at) SELECT id, ?, ?, ?, ? FROM samples WHERE id = ?",
       )
-      .bind(stage, now, note, now, id),
+      .bind(stage, at, note, now, id),
     bumpVersion(db),
   ]);
   return changed(result);
@@ -306,7 +319,7 @@ export async function deleteSample(db: D1Database, id: string): Promise<boolean>
 export async function getQuote(db: D1Database, id: string): Promise<Quote | null> {
   const [quotes, events] = await db.batch([
     db.prepare("SELECT * FROM quotes WHERE id = ?").bind(id),
-    db.prepare("SELECT quote_id, status, at, note FROM quote_events WHERE quote_id = ? ORDER BY id").bind(id),
+    db.prepare("SELECT id, quote_id, status, at, note FROM quote_events WHERE quote_id = ? ORDER BY id").bind(id),
   ]);
   const row = quotes!.results[0] as Row | undefined;
   return row ? toQuote(row, (events!.results as Row[]).map(quoteEvent)) : null;
@@ -317,18 +330,20 @@ export async function createQuote(
   fields: QuoteFields,
   status: QuoteStatusKey,
   note: string,
+  at: string,
   now: string,
 ): Promise<string> {
   const id = crypto.randomUUID();
+  if (status === "comprada" && fields.poReceivedAt === undefined) fields = { ...fields, poReceivedAt: at };
   const { cols, values } = assignments(fields, QUOTE_COLUMNS);
   const allCols = [...cols, "id", "status", "status_since", "created_at", "updated_at"];
   await db.batch([
     db
       .prepare(`INSERT INTO quotes (${allCols.join(", ")}) VALUES (${allCols.map(() => "?").join(", ")})`)
-      .bind(...values, id, status, now, now, now),
+      .bind(...values, id, status, at, now, now),
     db
       .prepare("INSERT INTO quote_events (quote_id, status, at, note, recorded_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(id, status, now, note, now),
+      .bind(id, status, at, note, now),
     bumpVersion(db),
   ]);
   return id;
@@ -350,15 +365,23 @@ export async function changeQuoteStatus(
   id: string,
   status: QuoteStatusKey,
   note: string,
+  at: string,
   now: string,
 ): Promise<boolean> {
   const [result] = await db.batch([
-    db.prepare("UPDATE quotes SET status = ?, status_since = ?, updated_at = ? WHERE id = ?").bind(status, now, now, id),
+    db
+      .prepare(
+        // Al comprarse, la llegada de la orden de compra toma esa fecha si no se había capturado.
+        `UPDATE quotes SET status = ?1, status_since = ?2, updated_at = ?3,
+           po_received_at = CASE WHEN ?1 = 'comprada' AND po_received_at IS NULL THEN ?2 ELSE po_received_at END
+         WHERE id = ?4`,
+      )
+      .bind(status, at, now, id),
     db
       .prepare(
         "INSERT INTO quote_events (quote_id, status, at, note, recorded_at) SELECT id, ?, ?, ?, ? FROM quotes WHERE id = ?",
       )
-      .bind(status, now, note, now, id),
+      .bind(status, at, note, now, id),
     bumpVersion(db),
   ]);
   return changed(result);
@@ -373,6 +396,57 @@ export async function deleteQuote(db: D1Database, id: string): Promise<boolean> 
     db.prepare("DELETE FROM quotes WHERE id = ?").bind(id),
     bumpVersion(db),
   ]);
+  return changed(result);
+}
+
+// --- Correcciones al historial -----------------------------------------------------
+
+/**
+ * Corrige la fecha o la nota de un renglón del historial. Si es el último renglón,
+ * "desde cuándo" está en su etapa o estado se mueve con él.
+ */
+export async function editStageEvent(
+  db: D1Database,
+  sampleId: string,
+  eventId: number,
+  edit: { at?: string; note?: string },
+  isLast: boolean,
+  stage: StageKey,
+  now: string,
+): Promise<boolean> {
+  const stmts = [
+    db
+      .prepare("UPDATE stage_events SET at = COALESCE(?, at), note = COALESCE(?, note) WHERE id = ? AND sample_id = ?")
+      .bind(edit.at ?? null, edit.note ?? null, eventId, sampleId),
+  ];
+  if (isLast && edit.at) {
+    stmts.push(
+      db
+        .prepare("UPDATE samples SET stage_since = ?1, delivered_at = CASE WHEN ?2 = 'entregado' THEN ?1 ELSE delivered_at END, updated_at = ?3 WHERE id = ?4")
+        .bind(edit.at, stage, now, sampleId),
+    );
+  }
+  const [result] = await db.batch([...stmts, bumpVersion(db)]);
+  return changed(result);
+}
+
+export async function editQuoteEvent(
+  db: D1Database,
+  quoteId: string,
+  eventId: number,
+  edit: { at?: string; note?: string },
+  isLast: boolean,
+  now: string,
+): Promise<boolean> {
+  const stmts = [
+    db
+      .prepare("UPDATE quote_events SET at = COALESCE(?, at), note = COALESCE(?, note) WHERE id = ? AND quote_id = ?")
+      .bind(edit.at ?? null, edit.note ?? null, eventId, quoteId),
+  ];
+  if (isLast && edit.at) {
+    stmts.push(db.prepare("UPDATE quotes SET status_since = ?, updated_at = ? WHERE id = ?").bind(edit.at, now, quoteId));
+  }
+  const [result] = await db.batch([...stmts, bumpVersion(db)]);
   return changed(result);
 }
 

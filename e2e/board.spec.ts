@@ -15,7 +15,7 @@ test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ 
   await login(rodrigo, "clave-editor");
   await rodrigo.getByRole("button", { name: "Nueva muestra" }).click();
   await rodrigo.getByLabel("Muestra", { exact: true }).fill(code);
-  await rodrigo.getByLabel("Prueba", { exact: true }).selectOption("FTIR");
+  await rodrigo.getByLabel("Prueba", { exact: true }).fill("FTIR");
   await rodrigo.getByLabel("Cliente", { exact: true }).fill("Cliente de prueba");
   await rodrigo.getByLabel("Recepción de probetas (fecha y hora)", { exact: true }).fill("2026-10-05T09:30");
   await rodrigo.getByLabel("Días hábiles comprometidos", { exact: true }).fill("7");
@@ -27,17 +27,17 @@ test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ 
 
   await login(jefe, "clave-del-jefe");
   await expect(jefe.getByRole("button", { name: "Nueva muestra" })).toBeHidden();
-  // Una muestra nueva empieza en VoBo (antes de que lleguen las probetas).
-  await expect(jefe.getByRole("region", { name: "En VoBo" }).getByText(code)).toBeVisible();
+  // Una muestra nueva empieza en el recibo de muestra (antes del VoBo del cliente).
+  await expect(jefe.getByRole("region", { name: "Recibo de muestra" }).getByText(code)).toBeVisible();
 
-  // Rodrigo la pasa a maquinado con una nota.
+  // Rodrigo la pasa a VoBo con una nota.
   await rodrigo.locator("#sampleBoard .card", { hasText: code }).click();
   await rodrigo.getByLabel("Nota del cambio", { exact: true }).fill("VoBo del cliente recibido");
-  await rodrigo.getByRole("button", { name: "Pasar a En maquinado" }).click();
+  await rodrigo.getByRole("button", { name: "Pasar a En VoBo" }).click();
   await expect(rodrigo.getByRole("dialog").getByText("VoBo del cliente recibido")).toBeVisible();
 
   // El jefe lo ve en la siguiente consulta automática (cada 10 s), sin recargar.
-  await expect(jefe.getByRole("region", { name: "En maquinado" }).getByText(code)).toBeVisible({ timeout: 15_000 });
+  await expect(jefe.getByRole("region", { name: "En VoBo" }).getByText(code)).toBeVisible({ timeout: 15_000 });
 
   // El jefe abre el detalle: ve el historial pero no puede editar.
   await jefe.locator("#sampleBoard .card", { hasText: code }).click();
@@ -67,9 +67,22 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await page.getByLabel("Elegir estado", { exact: true }).selectOption("comprada");
   await page.getByRole("button", { name: "Mover" }).click();
   await expect(page.getByRole("dialog").getByText("Estado: Comprada")).toBeVisible();
-  await page.getByRole("button", { name: "Agregar muestra de esta cotización" }).click();
+
+  // Una prueba que va para otro consultor, escrita a mano (no está en la lista).
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Prueba", { exact: true }).fill("Resistencia a sustancias químicas");
+  await dialog.getByLabel("Consultor", { exact: true }).fill("Consultor B");
+  await dialog.getByRole("button", { name: "Agregar prueba" }).click();
+  await expect(dialog.getByRole("button", { name: "Resistencia a sustancias químicas" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Resistencia a sustancias químicas" }).click();
+  await expect(page.getByLabel("Reporte prometido para", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cerrar" }).click();
+
+  // Y una propia con todos los datos.
+  await page.locator("#quoteBoard .card", { hasText: number }).click();
+  await page.getByRole("button", { name: "Agregar con todos los datos" }).click();
   await page.getByLabel("Muestra", { exact: true }).fill(`M-${number}`);
-  await page.getByLabel("Prueba", { exact: true }).selectOption("Flamabilidad Horizontal");
+  await page.getByLabel("Prueba", { exact: true }).fill("Flamabilidad Horizontal");
   await page.getByRole("button", { name: "Agregar muestra", exact: true }).click();
   await expect(page.getByRole("heading", { name: `M-${number}` })).toBeVisible();
   await page.getByRole("button", { name: "Cerrar" }).click();
@@ -78,6 +91,38 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await page.getByRole("tab", { name: "Mi productividad" }).click();
   await expect(page.locator("#timeline").getByText(number).first()).toBeVisible();
   await expect(page.locator("#chartTypes").getByText("Elaborar cotización")).toBeVisible();
+});
+
+test("cotización con fechas pasadas pide seguimiento a los 15 días", async ({ page }, info) => {
+  const number = `C-OLD-${info.project.name}`;
+  const local = (daysAgo: number) => {
+    const d = new Date(Date.now() - daysAgo * 864e5);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
+  };
+  await login(page, "clave-editor");
+  await page.getByRole("tab", { name: "Cotizaciones" }).click();
+  await page.getByRole("button", { name: "Nueva cotización" }).click();
+  await page.getByLabel("Número de cotización", { exact: true }).fill(number);
+  await page.getByLabel("Emisión", { exact: true }).fill(local(30));
+  await page.getByLabel("Envío al cliente", { exact: true }).fill(local(20));
+  await page.getByRole("button", { name: "Agregar cotización" }).click();
+  await expect(page.getByRole("heading", { name: number })).toBeVisible();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Estado: Enviada al cliente")).toBeVisible();
+  await expect(dialog.getByText(/sin seguimiento/)).toBeVisible();
+  await expect(page.locator("#remind")).toContainText(number);
+
+  // Registrar el seguimiento quita el recordatorio.
+  await page.getByRole("button", { name: "Registrar seguimiento" }).click();
+  await expect(dialog.getByText("Estado: En seguimiento")).toBeVisible();
+  await expect(page.locator("#remind")).not.toContainText(number);
+
+  // Corregir la fecha del envío desde el historial.
+  await dialog.getByRole("button", { name: "Corregir fecha de Enviada al cliente" }).click();
+  await page.locator("#ev_at").fill(local(19));
+  await dialog.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(page.locator("#ev_at")).toHaveCount(0);
 });
 
 test("modo demo: datos ficticios sin tocar la base real", async ({ page }) => {

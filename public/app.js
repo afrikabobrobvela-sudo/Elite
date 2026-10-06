@@ -1,17 +1,31 @@
 // Arranque: sesión, pestañas y sincronización en vivo.
 import { renderActivityBar } from "./js/activities.js";
-import { $, api, closeSheet, drawSheet, openSheet, setLocalApi, setRefresher, setUnauthorizedHandler, state } from "./js/core.js";
+import { $, api, closeSheet, esc, drawSheet, openSheet, setLocalApi, setRefresher, setUnauthorizedHandler, state } from "./js/core.js";
 import { demoApi, setDemoRole, startDemo, stopDemo } from "./js/demo.js";
 import { bindProductivityControls, renderProductivity } from "./js/productivity.js";
-import { bindQuoteControls, renderQuotes } from "./js/quotes.js";
+import { bindQuoteControls, quotesDue, renderQuotes } from "./js/quotes.js";
 import { bindSampleControls, renderSamples } from "./js/samples.js";
 
 const POLL_MS = 10_000;
 const VIEWS = ["muestras", "cotizaciones", "productividad"];
 let pollTimer = null;
 
+/** Recordatorio: cotizaciones con el cliente que llevan 15+ días sin seguimiento. */
+function renderReminder() {
+  const due = state.role === "editor" ? quotesDue() : [];
+  const box = $("remind");
+  box.hidden = !due.length;
+  if (!due.length) return void (box.innerHTML = "");
+  const names = due.slice(0, 4).map((q) => q.number || q.client || "sin número").join(", ") + (due.length > 4 ? "…" : "");
+  const n = state.catalog.followUpDays;
+  box.innerHTML = `<span><b>${due.length === 1 ? "1 cotización lleva" : `${due.length} cotizaciones llevan`} ${n} días o más sin seguimiento:</b> ${esc(names)}</span>
+    <button id="remindBtn">Ver cotizaciones</button>`;
+  $("remindBtn").onclick = () => selectView("cotizaciones");
+}
+
 function render() {
   if (!state.catalog) return;
+  renderReminder();
   renderActivityBar();
   for (const v of VIEWS) {
     $("view-" + v).hidden = state.view !== v;
