@@ -59,7 +59,8 @@ button:disabled{opacity:.5;cursor:default}
 .chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.late{background:var(--late-soft);color:var(--late)} .chip.done{background:var(--accent-soft);color:var(--accent)}
 .more{font-size:.8rem;color:var(--accent);background:none;border:none;padding:4px;text-align:left}
 .note{font-size:.85rem;color:var(--muted)}
-.banner{background:var(--warn-soft);color:var(--fg);border-radius:8px;padding:10px 14px;font-size:.9rem}
+.banner,.sheet-error{background:var(--warn-soft);color:var(--fg);border-radius:8px;padding:10px 14px;font-size:.9rem}
+.sheet-error{margin:8px 0 0}
 .avg{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
 .avg div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:.8rem;color:var(--muted)}
 .avg b{display:block;font-family:var(--f-mono);font-size:1rem;color:var(--fg);font-weight:500}

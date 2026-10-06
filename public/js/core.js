@@ -62,6 +62,7 @@ export async function mutate(fn) {
   try {
     const res = await fn();
     $("banner").hidden = true;
+    document.querySelector("#sheetHost .sheet-error")?.remove();
     await refresh();
     return res || true;
   } catch (e) {
@@ -78,6 +79,18 @@ export function showError(e) {
     e.status === 403 ? "Tu acceso es de solo lectura; no puedes cambiar datos." :
     e.status === 422 ? "Revisa los datos: " + e.message :
     "No se pudo guardar el cambio. Revisa tu conexión e inténtalo de nuevo.";
+  // Con un panel abierto el aviso de arriba queda tapado: se repite dentro del panel.
+  const sheet = document.querySelector("#sheetHost .sheet");
+  if (sheet) {
+    let box = sheet.querySelector(".sheet-error");
+    if (!box) {
+      box = document.createElement("p");
+      box.className = "sheet-error";
+      box.setAttribute("role", "alert");
+      sheet.children[0].after(box);
+    }
+    box.textContent = b.textContent;
+  }
 }
 
 // --- Formato ----------------------------------------------------------------

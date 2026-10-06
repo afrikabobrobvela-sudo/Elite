@@ -77,6 +77,8 @@ Los datos de clientes **no** se guardan en este repositorio (es público): viven
 
 ### Actualizar a una versión nueva
 
+En Windows basta con doble clic en `configurar.cmd` dentro de la carpeta del proyecto: hace estos cuatro pasos y se detiene si alguno falla. A mano:
+
 ```bash
 git pull
 npm install
