@@ -12,7 +12,7 @@ let showAllDone = false;
 export function renderSamples() {
   const list = state.samples.filter(
     (m) =>
-      matchesQuery(m.code, m.quote, m.client, m.test, m.standard, m.consultant, m.salesRep) &&
+      matchesQuery(m.code, m.receipt, m.quote, m.client, m.test, m.standard, m.consultant, m.salesRep) &&
       (filter === "todas" || m.stage === "entregado" || (filter === "mias") === isMine(m)),
   );
   const active = state.samples.filter((m) => m.stage !== "entregado");
@@ -57,7 +57,7 @@ function card(m) {
   return `<article class="card s-${st.c}${turn && !turn.mine ? " waiting" : ""}" tabindex="0" data-open="sample" data-id="${esc(m.id)}">
     <div class="top"><span class="code">${esc(m.code || "Sin número")}</span><span class="chip ${st.c}">${esc(st.t)}</span></div>
     <div class="t">${esc(m.test || "Prueba sin definir")}</div>
-    <div class="c">${esc(m.client || "Cliente sin registrar")}</div>
+    <div class="c">${esc(m.client || "Cliente sin registrar")}${m.receipt ? ` · Recibo ${esc(m.receipt)}` : ""}</div>
     ${cond ? `<div><span class="chip ${cond.c}">${esc(cond.t)}</span></div>` : ""}
     <div class="since">${esc(since)}</div>
     ${turn ? `<div class="turn${turn.mine ? " mine" : ""}">${esc(turn.t)}</div>` : ""}
@@ -133,10 +133,10 @@ registerSheet("sample", (open) => {
       <ul class="plain">${linked.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
     <form class="grid" id="dataForm">
-      ${input("code", "Muestra")}
+      ${input("code", "Muestra")}${input("receipt", "Recibo")}
       <label>Cotización<select id="f_quoteId" aria-label="Cotización" ${dis}><option value="">Sin vincular</option>${state.quotes.map((x) => `<option value="${esc(x.id)}" ${x.id === m.quoteId ? "selected" : ""}>${esc(x.number || "Sin número")} · ${esc(x.client)}</option>`).join("")}</select></label>
       ${input("quote", "Número de cotización")}
-      ${input("client", "Cliente")}
+      ${input("client", "Cliente", "text", "full")}
       <label class="full">Prueba<input id="f_test" list="testList" maxlength="200" value="${esc(m.test ?? "")}" placeholder="Elige de la lista o escríbela" ${dis}></label>
       ${testDatalist()}
       ${input("standard", "Norma")}${input("consultant", "Consultor")}
@@ -199,7 +199,7 @@ registerSheet("sample", (open) => {
       e.preventDefault();
       if (!canWrite()) return;
       const body = {};
-      for (const k of ["code", "quote", "client", "standard", "consultant", "salesRep"]) body[k] = $("f_" + k).value.trim();
+      for (const k of ["code", "receipt", "quote", "client", "standard", "consultant", "salesRep"]) body[k] = $("f_" + k).value.trim();
       body.test = $("f_test").value.trim();
       body.quoteId = $("f_quoteId").value || null;
       body.receivedAt = fromLocalInput(rec.value);

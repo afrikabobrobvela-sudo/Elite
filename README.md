@@ -9,7 +9,7 @@ Tiene tres pestañas:
 
 | Pestaña | Qué muestra |
 |---|---|
-| **Muestras** | Tablero por etapa. Parte administrativa: Recibo de muestra → En VoBo → En maquinado → Probetas listas. Evaluación: Recibido por consultor → Acondicionando → En prueba → Elaborando reporte → En revisión → Entregado. Cada muestra dice si le toca a Rodrigo o espera a otros (cliente, taller, consultor). |
+| **Muestras** | Tablero por etapa. Parte administrativa: Recibo de muestra → En VoBo → En maquinado → Probetas listas. Evaluación: Recibido por consultor → Acondicionando → En prueba → Elaborando reporte → En revisión → Entregado. Cada muestra guarda su número de recibo y dice si le toca a Rodrigo o espera a otros (cliente, taller, consultor). |
 | **Cotizaciones** | En elaboración → Enviada al cliente → En seguimiento → Comprada / Perdida. Desde la cotización se agregan sus pruebas (de la lista o escritas a mano); las que van a otro consultor registran cuándo se le entregaron probetas y para cuándo prometió el reporte. Cada cotización guarda la llegada de la orden de compra. Las que están con el cliente y llevan 15 días sin seguimiento se marcan y aparece un recordatorio arriba. |
 | **Mi productividad** | Carga actual, horas por día (administrativo / evaluación / otro), tiempo por actividad y la línea del tiempo de todo el trabajo. |
 

@@ -15,6 +15,7 @@ test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ 
   await login(rodrigo, "clave-editor");
   await rodrigo.getByRole("button", { name: "Nueva muestra" }).click();
   await rodrigo.getByLabel("Muestra", { exact: true }).fill(code);
+  await rodrigo.getByLabel("Recibo", { exact: true }).fill("R-1234");
   await rodrigo.getByLabel("Prueba", { exact: true }).fill("FTIR");
   await rodrigo.getByLabel("Cliente", { exact: true }).fill("Cliente de prueba");
   await rodrigo.getByLabel("Recepción de probetas (fecha y hora)", { exact: true }).fill("2026-10-05T09:30");
@@ -29,6 +30,7 @@ test("Rodrigo mueve una muestra y el jefe la ve cambiar sin recargar", async ({ 
   await expect(jefe.getByRole("button", { name: "Nueva muestra" })).toBeHidden();
   // Una muestra nueva empieza en el recibo de muestra (antes del VoBo del cliente).
   await expect(jefe.getByRole("region", { name: "Recibo de muestra" }).getByText(code)).toBeVisible();
+  await expect(jefe.locator("#sampleBoard .card", { hasText: code })).toContainText("Recibo R-1234");
 
   // Rodrigo la pasa a VoBo con una nota.
   await rodrigo.locator("#sampleBoard .card", { hasText: code }).click();

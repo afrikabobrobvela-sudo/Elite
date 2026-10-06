@@ -18,6 +18,7 @@ export interface QuoteEvent {
 export interface Sample {
   id: string;
   code: string;
+  receipt: string;
   quote: string;
   quoteId: string | null;
   client: string;
@@ -70,6 +71,7 @@ type Row = Record<string, unknown>;
 /** Campo de la API → columna, y conversión de booleanos (SQLite guarda 0/1). */
 const SAMPLE_COLUMNS: Record<keyof SampleFields, string> = {
   code: "code",
+  receipt: "receipt",
   quote: "quote",
   quoteId: "quote_id",
   client: "client",
@@ -121,6 +123,7 @@ function toSample(r: Row, history: StageEvent[]): Sample {
   return {
     id: r.id as string,
     code: r.code as string,
+    receipt: (r.receipt as string) ?? "",
     quote: r.quote as string,
     quoteId: (r.quote_id as string | null) ?? null,
     client: r.client as string,

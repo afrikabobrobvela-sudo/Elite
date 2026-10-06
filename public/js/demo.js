@@ -110,7 +110,7 @@ function makeSample(r, test, q, start, nowMs, adminByMe) {
   const receivedAt = at("recibido");
   const businessDays = flame ? 10 : pick3(r, [5, 7, 7]);
   return {
-    id: newId(), code: "", quote: q?.number ?? "", quoteId: q?.id ?? null, client: q?.client ?? CLIENTS[Math.floor(r() * CLIENTS.length)],
+    id: newId(), code: "", receipt: "", quote: q?.number ?? "", quoteId: q?.id ?? null, client: q?.client ?? CLIENTS[Math.floor(r() * CLIENTS.length)],
     test, standard: STANDARDS[test] ?? "", consultant: testByMe ? "Rodrigo" : OTHER_CONSULTANTS[Math.floor(r() * 2)],
     salesRep: q?.salesRep ?? SELLERS[Math.floor(r() * SELLERS.length)], adminByMe, testByMe,
     receivedAt, businessDays: receivedAt ? businessDays : null,

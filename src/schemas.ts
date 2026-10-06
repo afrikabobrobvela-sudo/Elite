@@ -18,6 +18,7 @@ const testName = text(200);
 /** Campos editables de una muestra. */
 export const sampleFields = z.object({
   code: text(40).optional(),
+  receipt: text(40).optional(),
   quote: text(40).optional(),
   quoteId: z.string().max(64).nullable().optional(),
   client: text(200).optional(),
