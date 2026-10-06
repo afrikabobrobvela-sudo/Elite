@@ -64,6 +64,7 @@ describe("muestras", () => {
       method: "POST",
       body: JSON.stringify({
         code: "M26.700",
+        receipt: "R-0457",
         test: "FTIR",
         client: "Cliente Demo",
         receivedAt: "2026-10-05T15:30:00.000Z",
@@ -72,8 +73,11 @@ describe("muestras", () => {
       }),
     });
     expect(created.status).toBe(201);
-    const { data: sample } = (await created.json()) as { data: { id: string; stage: string; history: unknown[] } };
+    const { data: sample } = (await created.json()) as {
+      data: { id: string; stage: string; receipt: string; history: unknown[] };
+    };
     expect(sample.stage).toBe("recibo_muestra");
+    expect(sample.receipt).toBe("R-0457");
     expect(sample.history).toHaveLength(1);
 
     const moved = await api(editor, `/samples/${sample.id}/stage-changes`, {
