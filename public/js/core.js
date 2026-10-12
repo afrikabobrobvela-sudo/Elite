@@ -166,6 +166,12 @@ export const activityMs = (a, now = Date.now()) =>
 export const stages = () => state.catalog.stages;
 export const stageOf = (key) => state.catalog.stages.find((s) => s.key === key);
 export const stageIdx = (key) => state.catalog.stages.findIndex((s) => s.key === key);
+/**
+ * Etapas por las que pasa una muestra. Si la parte administrativa no es tuya (no es tu cliente),
+ * no lleva recibo, VoBo ni maquinado: empieza en "Recibido por consultor".
+ */
+export const stagesFor = (m) =>
+  m.adminByMe === false ? state.catalog.stages.filter((s) => s.phase !== "admin" || s.key === m.stage) : state.catalog.stages;
 export const quoteStatusOf = (key) => state.catalog.quoteStatuses.find((s) => s.key === key);
 export const activityTypeOf = (key) => state.catalog.activityTypes.find((a) => a.key === key);
 export const groupOf = (key) => state.catalog.activityGroups.find((g) => g.key === key);

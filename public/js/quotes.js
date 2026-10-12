@@ -29,6 +29,9 @@ export function followUpDue(q, now = Date.now()) {
 
 export const quotesDue = () => state.quotes.filter((q) => followUpDue(q) !== null);
 
+/** Partidas de la cotización en una línea: "Flamabilidad Horizontal ×5, FTIR ×2". */
+const itemsText = (q) => (q.items ?? []).map((i) => `${i.test} ×${i.quantity}`).join(", ");
+
 /** Muestras de una cotización. */
 export const samplesOf = (q) => state.samples.filter((s) => s.quoteId === q.id);
 
@@ -48,7 +51,7 @@ const CLOSED_SHOWN = 8;
 const showAllIn = new Set();
 
 export function renderQuotes() {
-  const list = state.quotes.filter((q) => matchesQuery(q.number, q.client, q.salesRep, q.tests, q.notes));
+  const list = state.quotes.filter((q) => matchesQuery(q.number, q.client, q.salesRep, q.tests, itemsText(q), q.notes));
   const open = state.quotes.filter((q) => OPEN.includes(q.status));
   $("qOpen").textContent = open.length;
   $("qFollow").textContent = quotesDue().length;
@@ -86,7 +89,7 @@ function card(q) {
       due !== null ? `<span class="chip warn">Seguimiento: ${due} d</span>` : samples.length ? `<span class="chip done">${samples.length} muestra${samples.length === 1 ? "" : "s"}</span>` : ""
     }</div>
     <div class="t">${esc(q.client || "Cliente sin registrar")}</div>
-    ${q.tests ? `<div class="c">${esc(q.tests)}</div>` : ""}
+    ${q.items?.length ? `<div class="c">${esc(itemsText(q))}</div>` : q.tests ? `<div class="c">${esc(q.tests)}</div>` : ""}
     ${q.status === "comprada" && q.poReceivedAt ? `<div class="c">Orden de compra: ${esc(fmtTs(q.poReceivedAt))}</div>` : ""}
     <div class="since">${OPEN.includes(q.status) ? "En este estado hace " + esc(ago(q.statusSince)) : q.status === "comprada" ? (span.to ? `Probetas al consultor en ${businessDaysBetween(new Date(span.from), new Date(span.to))} d háb.` : "Probetas aún no llegan al consultor") : esc(fmtTs(q.statusSince))}</div>
   </article>`;
@@ -130,6 +133,15 @@ registerSheet("quote", (open) => {
   const dateInput = (id, label, value = "", required = false) =>
     `<label>${label}<input id="${id}" type="datetime-local" value="${value}" ${required ? "required" : ""}></label>`;
 
+  const partidas = `<div class="sec"><h4>Partidas</h4>
+      <div id="qItems"></div>
+      ${canWrite() ? `<div class="grid item-add">
+          <label class="full">Prueba de la partida<input id="qi_test" list="testList" maxlength="200" placeholder="Elige de la lista o escríbela"></label>
+          ${testDatalist()}
+          <label>Cantidad<input id="qi_qty" type="number" min="1" max="9999" value="1"></label>
+          <div class="row end"><button type="button" id="qiAdd">Agregar partida</button></div>
+        </div><p class="note" id="qiMsg" role="status"></p>` : ""}</div>`;
+
   const body = `
     ${isNew ? "" : `<div class="row"><span class="note">Estado: <b>${esc(quoteStatusOf(q.status).name)}</b> desde hace ${esc(ago(q.statusSince))}</span></div>`}
     ${due !== null ? `<p class="remind"><span>Lleva <b>${due} días</b> sin seguimiento. Contacta al cliente y regístralo aquí.</span></p>` : ""}
@@ -148,11 +160,11 @@ registerSheet("quote", (open) => {
         ? `De la cotización a la entrega de probetas al consultor: <b>${businessDaysBetween(new Date(span.from), new Date(span.to))} días hábiles</b>.`
         : `Abierta hace ${esc(ago(span.from))}; sus probetas todavía no llegan al consultor.`}
         Tiempo que registraste en esta cotización: <b>${fmtHours(actMs)}</b>.</p></div>`}
+    ${partidas}
     ${isNew ? "" : `<div class="sec"><h4>Pruebas de esta cotización</h4>
       ${samples.length ? `<ul class="plain tests">${samples.map(testRow).join("")}</ul>` : `<p class="note">Todavía no hay pruebas. Agrégalas aquí; cada una se sigue como muestra en el tablero.</p>`}
       ${canWrite() ? `<form class="grid" id="qTestForm">
           <label class="full">Prueba<input id="qt_test" list="testList" maxlength="200" required placeholder="Elige de la lista o escríbela"></label>
-          ${testDatalist()}
           <label>Consultor<input id="qt_consultant" maxlength="100" placeholder="Vacío si la haces tú"></label>
           <label>Muestra<input id="qt_code" maxlength="40" placeholder="Opcional"></label>
           <div class="row full"><button class="primary" type="submit">Agregar prueba</button><button type="button" id="qAddSample">Agregar con todos los datos</button></div>
@@ -162,9 +174,10 @@ registerSheet("quote", (open) => {
     ${acts.length ? `<div class="sec"><h4>Tiempo registrado</h4><ul class="plain">${acts.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
     <form class="grid" id="quoteForm" ${isNew ? "" : 'data-autosave="change"'}>
+      ${isNew ? `<input type="hidden" id="q_items" value="[]">` : ""}
       ${input("number", "Número de cotización")}${input("salesRep", "Vendedor")}
       ${input("client", "Cliente", "full")}
-      <label class="full">Pruebas solicitadas<textarea id="q_tests" rows="2" ${dis}>${esc(q.tests ?? "")}</textarea></label>
+      ${q.tests ? `<label class="full">Pruebas solicitadas (texto anterior a las partidas)<textarea id="q_tests" rows="2" ${dis}>${esc(q.tests)}</textarea></label>` : ""}
       <label class="full">Notas<textarea id="q_notes" rows="2" ${dis}>${esc(q.notes ?? "")}</textarea></label>
       ${isNew ? `<fieldset class="full dates"><legend>Fechas (si la cotización ya avanzó, llena las que apliquen)</legend><div class="grid">
           ${dateInput("n_emision", "Emisión", toLocalInput(new Date().toISOString()), true)}
@@ -179,6 +192,7 @@ registerSheet("quote", (open) => {
 
   const bind = () => {
     del.bind();
+    bindItems(q, isNew);
     const moveTo = async (status) => {
       const note = ($("qNota")?.value || "").trim();
       const at = whenValue("qAt");
@@ -203,8 +217,9 @@ registerSheet("quote", (open) => {
       e.preventDefault();
       if (!canWrite()) return;
       const body = {};
-      for (const k of ["number", "salesRep", "client", "tests", "notes"]) body[k] = $("q_" + k).value.trim();
+      for (const k of ["number", "salesRep", "client", "tests", "notes"]) if ($("q_" + k)) body[k] = $("q_" + k).value.trim();
       if (isNew) {
+        body.items = JSON.parse($("q_items").value || "[]");
         // Alta con su recorrido: emisión y, si ya pasaron, envío, seguimiento y compra, en orden.
         const steps = [["enviada", "n_enviada"], ["seguimiento", "n_seguimiento"], ["comprada", "n_comprada"]]
           .map(([status, id]) => ({ status, at: fromLocalInput($(id).value) }))
@@ -235,3 +250,68 @@ registerSheet("quote", (open) => {
 
   return { label: "Detalle de cotización", title: isNew ? "Nueva cotización" : q.number || "Sin número", body, bind };
 });
+
+
+/**
+ * Partidas: una prueba y cuántas son. En una cotización que ya existe cada cambio se guarda al momento;
+ * en una nueva viajan en un campo oculto del formulario (y en su borrador) hasta "Agregar cotización".
+ */
+function bindItems(q, isNew) {
+  const hidden = $("q_items");
+  let items = isNew ? JSON.parse(hidden.value || "[]") : [...(q.items ?? [])];
+  const draw = () => {
+    $("qItems").innerHTML = items.length
+      ? `<ol class="plain items">${items.map((it, i) => `<li><span class="n">${i + 1}</span><span class="t">${esc(it.test)}</span>${
+          canWrite()
+            ? `<label class="qty">Cantidad<input type="number" min="1" max="9999" value="${it.quantity}" data-item-qty="${i}" aria-label="Cantidad de la partida ${i + 1}"></label>
+               <button type="button" class="link small" data-item-del="${i}" aria-label="Quitar partida ${i + 1}">Quitar</button>`
+            : `<span class="qty">${it.quantity}</span>`
+        }</li>`).join("")}</ol>
+        <p class="note">${items.length} partida${items.length === 1 ? "" : "s"} · ${items.reduce((t, it) => t + it.quantity, 0)} pruebas en total</p>`
+      : `<p class="note">Sin partidas. Agrega cada prueba de la cotización con su cantidad.</p>`;
+  };
+  const save = async (next) => {
+    if (isNew) {
+      items = next;
+      hidden.value = JSON.stringify(items);
+      $("quoteForm").dataset.dirty = "1"; // para que se conserve como borrador
+      draw();
+      return true;
+    }
+    const res = await mutate(() => api(`/quotes/${q.id}`, { method: "PATCH", body: { items: next } }));
+    if (res) items = next;
+    draw();
+    return !!res;
+  };
+  draw();
+  if (!canWrite()) return;
+  const add = async () => {
+    const test = $("qi_test").value.trim();
+    const quantity = Number($("qi_qty").value);
+    if (!test) return void ($("qiMsg").textContent = "Escribe o elige la prueba de la partida.");
+    if (!Number.isInteger(quantity) || quantity < 1) return void ($("qiMsg").textContent = "La cantidad debe ser un número entero de 1 en adelante.");
+    if (await save([...items, { test, quantity }])) {
+      $("qi_test").value = "";
+      $("qi_qty").value = "1";
+      $("qiMsg").textContent = `Partida ${items.length} agregada.`;
+      $("qi_test").focus();
+    }
+  };
+  $("qiAdd").onclick = add;
+  for (const id of ["qi_test", "qi_qty"]) {
+    $(id).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); add(); }
+    });
+  }
+  $("qItems").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-item-del]");
+    if (b) save(items.filter((_, i) => i !== Number(b.dataset.itemDel)));
+  });
+  $("qItems").addEventListener("change", (e) => {
+    const i = e.target.dataset?.itemQty;
+    if (i === undefined) return;
+    const quantity = Number(e.target.value);
+    if (!Number.isInteger(quantity) || quantity < 1) return void (e.target.value = items[i].quantity);
+    save(items.map((it, k) => (k === Number(i) ? { ...it, quantity } : it)));
+  });
+}

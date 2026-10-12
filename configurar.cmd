@@ -15,11 +15,20 @@ echo === Elite: actualizar la plataforma ===
 echo Carpeta: %CD%
 echo.
 
-echo [1/4] Descargando la version nueva (git pull)...
-git pull || goto :error
+rem Si la carpeta vino de un zip no tiene .git: ya es la version nueva y no hay nada que descargar.
+if exist ".git" (
+  echo [1/4] Descargando la version nueva ^(git pull^)...
+  git pull || goto :error
+) else (
+  echo [1/4] Carpeta descargada como zip: no hace falta git pull.
+)
 
 echo.
 echo [2/4] Instalando dependencias (npm install)...
+where npm >nul 2>nul || (
+  echo No encuentro npm. Instala Node.js LTS desde https://nodejs.org, cierra esta ventana y vuelve a abrir configurar.cmd.
+  goto :error
+)
 call npm install || goto :error
 
 echo.

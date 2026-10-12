@@ -215,7 +215,9 @@ app.get("/samples/:id", async (c) => {
 app.post("/samples", editorOnly, async (c) => {
   const body = await parseBody(c, schemas.createSample);
   if (body instanceof Response) return body;
-  const { stage, note, at, ...fields } = body;
+  const { stage: requested, note, at, ...fields } = body;
+  // Si la parte administrativa (recibo, VoBo, maquinado) no es tuya, la muestra llega ya recibida.
+  const stage = requested ?? (fields.adminByMe === false ? "recibido" : "recibo_muestra");
   if (endBeforeStart(fields.conditioningStart, fields.conditioningEnd)) {
     return fail(c, 422, "validation_error", "El fin del acondicionamiento es anterior a su inicio");
   }

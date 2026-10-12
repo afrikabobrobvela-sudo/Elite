@@ -64,8 +64,20 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await page.getByRole("button", { name: "Nueva cotización" }).click();
   await page.getByLabel("Número de cotización", { exact: true }).fill(number);
   await page.getByLabel("Cliente", { exact: true }).fill("Cliente de prueba");
+  // Partidas: una antes de crear la cotización y otra después; cada una con su cantidad.
+  await page.getByLabel("Prueba de la partida").fill("Flamabilidad Horizontal");
+  await page.getByLabel("Cantidad", { exact: true }).fill("5");
+  await page.getByRole("button", { name: "Agregar partida" }).click();
+  await expect(page.getByText("1 partida · 5 pruebas en total")).toBeVisible();
   await page.getByRole("button", { name: "Agregar cotización" }).click();
   await expect(page.getByRole("heading", { name: number })).toBeVisible();
+  await expect(page.getByText("1 partida · 5 pruebas en total")).toBeVisible();
+  await page.getByLabel("Prueba de la partida").fill("FTIR");
+  await page.getByLabel("Prueba de la partida").press("Enter");
+  await expect(page.getByText("2 partidas · 6 pruebas en total")).toBeVisible();
+  await page.getByLabel("Cantidad de la partida 2").fill("2");
+  await page.getByLabel("Cantidad de la partida 2").blur();
+  await expect(page.getByText("2 partidas · 7 pruebas en total")).toBeVisible();
   await page.getByLabel("Elegir estado", { exact: true }).selectOption("comprada");
   await page.getByRole("button", { name: "Mover" }).click();
   await expect(page.getByRole("dialog").getByText("Estado: Comprada")).toBeVisible();
@@ -80,7 +92,8 @@ test("cotización con su muestra y tiempo registrado", async ({ page }, info) =>
   await expect(page.getByLabel("Reporte prometido para", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cerrar" }).click();
 
-  // Y una propia con todos los datos.
+  // Y una propia con todos los datos. La tarjeta muestra las partidas.
+  await expect(page.locator("#quoteBoard .card", { hasText: number })).toContainText("Flamabilidad Horizontal ×5, FTIR ×2");
   await page.locator("#quoteBoard .card", { hasText: number }).click();
   await page.getByRole("button", { name: "Agregar con todos los datos" }).click();
   await page.getByLabel("Muestra", { exact: true }).fill(`M-${number}`);
@@ -196,4 +209,19 @@ test("tiempo pasado en una muestra, corrección y guardado automático", async (
   await expect(page.getByText("Guardado", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: `Volver a ${code}` }).click();
   await expect(page.getByRole("dialog").getByText("3 h", { exact: false }).first()).toBeVisible();
+});
+
+test("una muestra que no es de tu cliente no pasa por VoBo", async ({ page }, info) => {
+  const code = `M-SINVOBO-${info.project.name}`;
+  await login(page, "clave-editor");
+  await page.getByRole("button", { name: "Nueva muestra" }).click();
+  await page.getByLabel("Muestra", { exact: true }).fill(code);
+  await page.getByLabel(/La parte administrativa/).uncheck();
+  const initial = page.getByLabel("Etapa inicial");
+  await expect(initial).toHaveValue("recibido");
+  await expect(initial.locator("option", { hasText: "En VoBo" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Agregar muestra", exact: true }).click();
+  await expect(page.getByRole("heading", { name: code })).toBeVisible();
+  await expect(page.getByLabel("Elegir etapa").locator("option", { hasText: "En VoBo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Pasar a Acondicionando" })).toBeVisible();
 });

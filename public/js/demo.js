@@ -59,7 +59,7 @@ function generate(catalog, now) {
       const qTests = [pick(tests), ...(r() < 0.3 ? [pick(tests)] : [])].filter((t, i, a) => a.indexOf(t) === i);
       const q = {
         id: newId(), number: `D26.${n++}`, client: pick(CLIENTS), salesRep: pick(SELLERS),
-        tests: qTests.join(", "), notes: "", history: [],
+        tests: "", items: qTests.map((test) => ({ test, quantity: 1 + Math.floor(r() * 6) })), notes: "", history: [],
       };
       const path = [["elaboracion", created]];
       let t = stepBusiness(created, r() < 0.6 ? 0 : 1, r);
@@ -244,7 +244,7 @@ export async function demoApi(path, { method = "GET", body, headers = {} } = {})
   }
   if (kind === "samples") {
     if (method === "POST" && !id) {
-      const { stage = "recibo_muestra", note = "", at = now, ...fields } = body;
+      const { stage = body.adminByMe === false ? "recibido" : "recibo_muestra", note = "", at = now, ...fields } = body;
       checkAt(at);
       const s = { id: newId(), quoteId: null, adminByMe: true, testByMe: true, conditioningStart: null, conditioningEnd: null, ...fields, createdAt: now, history: [] };
       changeStage(s, stage, note, at);
@@ -271,7 +271,7 @@ export async function demoApi(path, { method = "GET", body, headers = {} } = {})
     if (method === "POST" && !id) {
       const { status = "elaboracion", note = "", at = now, ...fields } = body;
       checkAt(at);
-      const q = { id: newId(), number: "", client: "", salesRep: "", tests: "", notes: "", poReceivedAt: null, ...fields, createdAt: now, history: [] };
+      const q = { id: newId(), number: "", client: "", salesRep: "", tests: "", items: [], notes: "", poReceivedAt: null, ...fields, createdAt: now, history: [] };
       changeStatus(q, status, note, at);
       db.quotes.push(q);
       changed();

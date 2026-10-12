@@ -308,6 +308,34 @@ describe("cotizaciones", () => {
     expect(after.history[0]!.note).toBe("Llegó en la mañana");
   });
 
+  it("guarda partidas (prueba y cantidad) al crear y al editar", async () => {
+    const editor = await login("clave-editor");
+    type Q = { id: string; items: { test: string; quantity: number }[] };
+    const read = async (res: Response) => ((await res.json()) as { data: Q }).data;
+    const q = await read(await api(editor, "/quotes", {
+      method: "POST",
+      body: JSON.stringify({ number: "C26.960", items: [{ test: "Flamabilidad Horizontal", quantity: 5 }] }),
+    }));
+    expect(q.items).toEqual([{ test: "Flamabilidad Horizontal", quantity: 5 }]);
+
+    const items = [...q.items, { test: "Resistencia a sustancias químicas", quantity: 2 }];
+    const edited = await read(await api(editor, `/quotes/${q.id}`, { method: "PATCH", body: JSON.stringify({ items }) }));
+    expect(edited.items).toEqual(items);
+
+    const bad = await api(editor, `/quotes/${q.id}`, { method: "PATCH", body: JSON.stringify({ items: [{ test: "FTIR", quantity: 0 }] }) });
+    expect(bad.status).toBe(422);
+    const noTest = await api(editor, `/quotes/${q.id}`, { method: "PATCH", body: JSON.stringify({ items: [{ test: " ", quantity: 1 }] }) });
+    expect(noTest.status).toBe(422);
+  });
+
+  it("una muestra sin parte administrativa tuya empieza ya recibida, sin VoBo", async () => {
+    const editor = await login("clave-editor");
+    const res = await api(editor, "/samples", { method: "POST", body: JSON.stringify({ code: "M26.970", adminByMe: false }) });
+    const s = ((await res.json()) as { data: { stage: string; history: { stage: string }[] } }).data;
+    expect(s.stage).toBe("recibido");
+    expect(s.history.map((h) => h.stage)).toEqual(["recibido"]);
+  });
+
   it("el jefe no puede crear cotizaciones", async () => {
     const viewer = await login("clave-del-jefe");
     expect((await api(viewer, "/quotes", { method: "POST", body: JSON.stringify({ number: "X" }) })).status).toBe(403);

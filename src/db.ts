@@ -1,5 +1,5 @@
 import type { ActivityTypeKey, QuoteStatusKey, StageKey } from "./catalog";
-import type { ActivityFields, QuoteFields, SampleFields } from "./schemas";
+import type { ActivityFields, QuoteFields, QuoteItem, SampleFields } from "./schemas";
 
 export interface StageEvent {
   id: number;
@@ -51,6 +51,7 @@ export interface Quote {
   status: QuoteStatusKey;
   statusSince: string | null;
   poReceivedAt: string | null;
+  items: QuoteItem[];
   createdAt: string;
   updatedAt: string;
   history: QuoteEvent[];
@@ -95,6 +96,7 @@ const QUOTE_COLUMNS: Record<keyof QuoteFields, string> = {
   tests: "tests",
   notes: "notes",
   poReceivedAt: "po_received_at",
+  items: "items",
 };
 
 const ACTIVITY_COLUMNS: Record<keyof ActivityFields, string> = {
@@ -106,7 +108,16 @@ const ACTIVITY_COLUMNS: Record<keyof ActivityFields, string> = {
   sampleId: "sample_id",
 };
 
-const toDb = (v: unknown) => (typeof v === "boolean" ? (v ? 1 : 0) : v);
+const toDb = (v: unknown) => (typeof v === "boolean" ? (v ? 1 : 0) : Array.isArray(v) ? JSON.stringify(v) : v);
+
+function parseItems(v: unknown): QuoteItem[] {
+  try {
+    const items = JSON.parse(String(v ?? "[]"));
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Pares columna/valor de los campos presentes (los undefined no se tocan). */
 function assignments<T extends object>(fields: T, columns: Record<keyof T, string>) {
@@ -158,6 +169,7 @@ function toQuote(r: Row, history: QuoteEvent[]): Quote {
     status: r.status as QuoteStatusKey,
     statusSince: (r.status_since as string | null) ?? null,
     poReceivedAt: (r.po_received_at as string | null) ?? null,
+    items: parseItems(r.items),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
     history,
