@@ -225,3 +225,42 @@ test("una muestra que no es de tu cliente no pasa por VoBo", async ({ page }, in
   await expect(page.getByLabel("Elegir etapa").locator("option", { hasText: "En VoBo" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Pasar a Acondicionando" })).toBeVisible();
 });
+
+/** Cotización ficticia en PDF con el formato del laboratorio (posiciones en puntos, como la original). */
+async function fakeQuotePdf(browser: import("@playwright/test").Browser) {
+  const span = (x: number, top: number, s: string) => `<span style="position:absolute;left:${x}pt;top:${top}pt">${s}</span>`;
+  const html = `<html><body style="margin:0;font:9pt sans-serif">
+    ${span(444, 14, "Referencia:")}${span(525, 14, "C26 777")}
+    ${span(462, 28, "Fecha :")}${span(536, 28, "2026/9/3")}
+    ${span(53, 62, "Elabora:")}${span(90, 62, "Persona Que Cotiza")}
+    ${span(49, 98, "Empresa:")}${span(93, 98, "Empresa Ficticia")}
+    ${span(30, 166, "Partida")}${span(87, 166, "Cantidad")}${span(143, 166, "Descripción")}${span(419, 166, "P.Unitario")}
+    ${span(58, 196, "1")}${span(87, 196, "3.00")}${span(144, 196, "Flamabilidad horizontal (*) según")}${span(439, 196, "1,000.00")}
+    ${span(144, 208, "ISO 3795")}
+    ${span(58, 260, "2")}${span(87, 260, "2.00")}${span(144, 260, "Índice de fluidez")}${span(439, 260, "900.00")}
+    ${span(27, 640, "Observaciones :")}
+  </body></html>`;
+  const page = await browser.newPage();
+  await page.setContent(html);
+  const pdf = await page.pdf({ width: "8.5in", height: "11in" });
+  await page.close();
+  return pdf;
+}
+
+test("importar partidas desde una cotización en PDF", async ({ page, browser }, info) => {
+  test.skip(info.project.name !== "escritorio", "basta con un navegador");
+  const pdf = await fakeQuotePdf(browser);
+  await login(page, "clave-editor");
+  await page.getByRole("tab", { name: "Cotizaciones" }).click();
+  await page.getByRole("button", { name: "Nueva cotización" }).click();
+  await page.locator("[data-quote-pdf]").setInputFiles({ name: "C26.777.pdf", mimeType: "application/pdf", buffer: pdf });
+  await expect(page.getByText(/Leí 2 partidas \(5 pruebas\) de C26\.777/)).toBeVisible();
+  await expect(page.getByLabel("Número de cotización", { exact: true })).toHaveValue("C26.777");
+  await expect(page.getByLabel("Cliente", { exact: true })).toHaveValue("Empresa Ficticia");
+  await expect(page.getByLabel("Vendedor", { exact: true })).toHaveValue("Persona Que Cotiza");
+  await expect(page.getByLabel("Emisión")).toHaveValue("2026-09-03T09:00");
+  await expect(page.getByText("Flamabilidad horizontal según ISO 3795")).toBeVisible();
+  await page.getByRole("button", { name: "Agregar cotización" }).click();
+  await expect(page.getByRole("heading", { name: "C26.777" })).toBeVisible();
+  await expect(page.getByText("2 partidas · 5 pruebas en total")).toBeVisible();
+});

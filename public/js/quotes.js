@@ -5,6 +5,7 @@ import {
   mutate, openSheet, quoteStatusOf, registerSheet, stageOf, state, testDatalist, timelineHtml, toLocalInput, turnLabel,
   whenInput, whenValue,
 } from "./core.js";
+import { readQuotePdf } from "./pdf-quote.js";
 
 const OPEN = ["elaboracion", "enviada", "seguimiento"];
 const AWAITING = ["enviada", "seguimiento"]; // ya está con el cliente y aún no compra
@@ -134,13 +135,16 @@ registerSheet("quote", (open) => {
     `<label>${label}<input id="${id}" type="datetime-local" value="${value}" ${required ? "required" : ""}></label>`;
 
   const partidas = `<div class="sec"><h4>Partidas</h4>
+      ${canWrite() ? `<div class="row"><button type="button" id="qiPdfBtn">Importar desde PDF</button><input type="file" accept="application/pdf" data-quote-pdf hidden>
+        <span class="note">Lee el número, la fecha, la empresa y las partidas de la cotización.</span></div>` : ""}
       <div id="qItems"></div>
       ${canWrite() ? `<div class="grid item-add">
           <label class="full">Prueba de la partida<input id="qi_test" list="testList" maxlength="200" placeholder="Elige de la lista o escríbela"></label>
           ${testDatalist()}
           <label>Cantidad<input id="qi_qty" type="number" min="1" max="9999" value="1"></label>
           <div class="row end"><button type="button" id="qiAdd">Agregar partida</button></div>
-        </div><p class="note" id="qiMsg" role="status"></p>` : ""}</div>`;
+        </div>
+        <p class="note" id="qiMsg" role="status"></p>` : ""}</div>`;
 
   const body = `
     ${isNew ? "" : `<div class="row"><span class="note">Estado: <b>${esc(quoteStatusOf(q.status).name)}</b> desde hace ${esc(ago(q.statusSince))}</span></div>`}
@@ -192,7 +196,8 @@ registerSheet("quote", (open) => {
 
   const bind = () => {
     del.bind();
-    bindItems(q, isNew);
+    const items = bindItems(q, isNew);
+    bindPdfImport(q, isNew, items);
     const moveTo = async (status) => {
       const note = ($("qNota")?.value || "").trim();
       const at = whenValue("qAt");
@@ -284,7 +289,8 @@ function bindItems(q, isNew) {
     return !!res;
   };
   draw();
-  if (!canWrite()) return;
+  const ctl = { save, get: () => items };
+  if (!canWrite()) return ctl;
   const add = async () => {
     const test = $("qi_test").value.trim();
     const quantity = Number($("qi_qty").value);
@@ -313,5 +319,54 @@ function bindItems(q, isNew) {
     const quantity = Number(e.target.value);
     if (!Number.isInteger(quantity) || quantity < 1) return void (e.target.value = items[i].quantity);
     save(items.map((it, k) => (k === Number(i) ? { ...it, quantity } : it)));
+  });
+  return ctl;
+}
+
+/**
+ * Importar desde PDF. En una cotización nueva llena los campos vacíos y las partidas para revisarlas
+ * antes de "Agregar cotización". En una existente guarda las partidas (y los datos que estaban vacíos).
+ */
+function bindPdfImport(q, isNew, items) {
+  const file = document.querySelector("[data-quote-pdf]");
+  if (!file) return;
+  $("qiPdfBtn").onclick = () => file.click();
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    file.value = "";
+    if (!f) return;
+    const msg = $("qiMsg");
+    msg.textContent = "Leyendo el PDF…";
+    let data;
+    try {
+      data = await readQuotePdf(f);
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "No pude abrir ese PDF. ¿Es la cotización original (no escaneada)?";
+      return;
+    }
+    if (!data.items.length) {
+      msg.textContent = "No encontré partidas en este PDF (busco la tabla Partida, Cantidad, Descripción).";
+      return;
+    }
+    const total = data.items.reduce((t, it) => t + it.quantity, 0);
+    const what = `${data.items.length} partida${data.items.length === 1 ? "" : "s"} (${total} prueba${total === 1 ? "" : "s"})`;
+    const current = items.get();
+    if (current.length && !confirm(`Esta cotización ya tiene ${current.length} partida${current.length === 1 ? "" : "s"}. ¿Las reemplazo por las ${data.items.length} del PDF?`)) {
+      msg.textContent = "";
+      return;
+    }
+    const fill = { number: data.number, client: data.client, salesRep: data.preparedBy, notes: data.requester ? `Solicitante: ${data.requester}` : "" };
+    if (isNew) {
+      for (const [k, v] of Object.entries(fill)) if (v && !$("q_" + k).value.trim()) $("q_" + k).value = v;
+      if (data.date) $("n_emision").value = `${data.date}T09:00`;
+      await items.save(data.items);
+      msg.textContent = `Leí ${what} de ${data.number || "la cotización"}. Revisa los datos y da "Agregar cotización".`;
+    } else {
+      const body = { items: data.items };
+      for (const [k, v] of Object.entries(fill)) if (v && !String(q[k] ?? "").trim()) body[k] = v;
+      const res = await mutate(() => api(`/quotes/${q.id}`, { method: "PATCH", body }));
+      if (res && $("qiMsg")) $("qiMsg").textContent = `Guardé ${what} del PDF.`;
+    }
   });
 }
