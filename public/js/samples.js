@@ -2,7 +2,7 @@
 import { addBusinessDays, dueStatus } from "/business-days.js";
 import {
   $, activityMs, activityTypeOf, ago, applySizes, api, canWrite, conditioningInfo, deleteBlock, esc, fmtHours, fmtTs,
-  fromLocalInput, isMine, matchesQuery, mutate, openSheet, quoteById, registerSheet, stageIdx, stageOf, stages, state,
+  fromLocalInput, isMine, matchesQuery, mutate, openSheet, quoteById, registerSheet, stageIdx, stageOf, stages, stagesFor, state,
   testDatalist, timelineHtml, toLocalInput, turnLabel, whenInput, whenValue,
 } from "./core.js";
 
@@ -86,7 +86,8 @@ registerSheet("sample", (open) => {
   const dis = canWrite() ? "" : "disabled";
   const st = dueStatus(m);
   const idx = Math.max(0, stageIdx(m.stage));
-  const nextS = stages()[idx + 1];
+  const own = stagesFor(m);
+  const nextS = own.find((s) => stageIdx(s.key) > idx);
   const cond = conditioningInfo(m);
   const showCond = !isNew && (idx >= stageIdx("recibido") || m.conditioningStart);
   const limit = state.catalog.conditioningLimits[m.test];
@@ -124,12 +125,13 @@ registerSheet("sample", (open) => {
     ${isNew ? "" : `<div class="row"><span class="chip ${st.c}">${esc(st.t)}</span><span class="note">Etapa actual: <b>${esc(stageOf(m.stage).name)}</b>${m.stage !== "entregado" ? " desde hace " + esc(ago(m.stageSince)) : ""}</span></div>`}
     ${!isNew && canWrite() ? `<div class="sec"><h4>Cambiar etapa</h4><div class="row">
       ${nextS ? `<button class="primary" id="nextBtn">Pasar a ${esc(nextS.name)}</button>` : ""}
-      <select id="stageSel" aria-label="Elegir etapa">${stages().map((s) => `<option value="${s.key}" ${s.key === m.stage ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
+      <select id="stageSel" aria-label="Elegir etapa">${own.map((s) => `<option value="${s.key}" ${s.key === m.stage ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
       <button id="setBtn">Mover</button></div>
       <div class="grid">
         ${whenInput("sAt", "Fecha y hora del cambio")}
         <label>Nota<input id="nota" aria-label="Nota del cambio" maxlength="500" placeholder="Opcional (ej. cliente no ha dado VoBo)"></label>
-      </div></div>` : ""}
+      </div>${m.adminByMe === false && stageOf(m.stage)?.phase === "admin"
+        ? `<p class="note">La parte administrativa no es tuya, así que esta muestra no lleva recibo, VoBo ni maquinado: pásala a ${esc(nextS?.name ?? "")}.</p>` : ""}</div>` : ""}
     ${timer}
     ${showCond ? `<div class="sec"><h4>Acondicionamiento</h4>
       <form class="grid" id="condForm" data-autosave="change">
@@ -156,7 +158,7 @@ registerSheet("sample", (open) => {
         <label class="check"><input type="checkbox" id="f_adminByMe" ${m.adminByMe ? "checked" : ""} ${dis}> La parte administrativa (recibo, VoBo, maquinado, entrega de probetas)</label>
         <label class="check"><input type="checkbox" id="f_testByMe" ${m.testByMe ? "checked" : ""} ${dis}> Las pruebas y el reporte</label>
       </fieldset>
-      ${isNew ? `<label>Etapa inicial<select id="f_stage" aria-label="Etapa inicial">${stages().slice(0, -1).map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join("")}</select></label>
+      ${isNew ? `<label>Etapa inicial<select id="f_stage" aria-label="Etapa inicial"></select></label>
         ${whenInput("f_at", "Desde cuándo está en esa etapa")}` : ""}
       ${!canWrite() ? "" : isNew ? `<div class="row full"><button class="primary" type="submit">Agregar muestra</button><span class="note" id="saveMsg" role="status"></span></div>` : `<p class="autosave-note full">Los cambios se guardan solos al terminar cada campo. <b id="saveMsg" role="status"></b></p>`}
     </form></div>
@@ -179,9 +181,12 @@ registerSheet("sample", (open) => {
     if ($("nextBtn")) $("nextBtn").onclick = () => moveTo(nextS.key);
     if ($("setBtn")) $("setBtn").onclick = () => $("stageSel").value !== m.stage && moveTo($("stageSel").value);
 
-    // Etapa inicial sugerida: si la parte administrativa no es tuya, la muestra te llega ya recibida.
+    // Etapa inicial: si la parte administrativa no es tuya, no hay recibo ni VoBo; la muestra te llega ya recibida.
     const initial = $("f_stage");
-    const syncInitial = () => initial && (initial.value = $("f_adminByMe").checked ? "recibo_muestra" : "recibido");
+    const syncInitial = () => {
+      const list = stagesFor({ adminByMe: $("f_adminByMe").checked }).filter((s) => s.key !== "entregado");
+      initial.innerHTML = list.map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join("");
+    };
     if (initial) { syncInitial(); $("f_adminByMe").addEventListener("change", syncInitial); }
 
     $("f_quoteId").addEventListener("change", (e) => {

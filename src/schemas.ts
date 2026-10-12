@@ -37,7 +37,7 @@ export const sampleFields = z.object({
 
 /** `at`: cuándo ocurrió de verdad (para registrar cosas pasadas); si falta, es ahora. */
 export const createSample = sampleFields.extend({
-  stage: z.enum(STAGE_KEYS).default("recibo_muestra"),
+  stage: z.enum(STAGE_KEYS).optional(),
   note: text(500).optional(),
   at: isoDateTime.optional(),
 });
@@ -57,6 +57,12 @@ export const eventEdit = z
   .object({ at: isoDateTime.optional(), note: text(500).optional() })
   .refine((v) => v.at !== undefined || v.note !== undefined, { message: "No hay campos para actualizar" });
 
+/** Partida de una cotización: qué prueba y cuántas. */
+export const quoteItem = z.object({
+  test: testName.min(1, "Falta la prueba de la partida"),
+  quantity: z.number().int().min(1).max(9999),
+});
+
 /** Campos editables de una cotización. */
 export const quoteFields = z.object({
   number: text(40).optional(),
@@ -65,6 +71,7 @@ export const quoteFields = z.object({
   tests: text(500).optional(),
   notes: text(1000).optional(),
   poReceivedAt: isoDateTime.nullable().optional(),
+  items: z.array(quoteItem).max(200).optional(),
 });
 
 export const createQuote = quoteFields.extend({
@@ -103,4 +110,5 @@ export const login = z.object({ password: z.string().min(1).max(200) });
 
 export type SampleFields = z.infer<typeof sampleFields>;
 export type QuoteFields = z.infer<typeof quoteFields>;
+export type QuoteItem = z.infer<typeof quoteItem>;
 export type ActivityFields = z.infer<typeof activityFields>;

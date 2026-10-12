@@ -172,6 +172,14 @@ ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 ul.plain.tests button.link{text-align:left}
 ul.plain.blocks li{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}
 ul.plain.blocks .note{display:block}
+ol.plain.items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;font-size:.9rem}
+ol.plain.items li{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}
+ol.plain.items .n{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);min-width:1.5em}
+ol.plain.items .t{flex:1;min-width:0}
+ol.plain.items label.qty{display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted)}
+ol.plain.items label.qty input{width:5.5em}
+ol.plain.items span.qty{font-family:var(--f-mono)}
+.row.end{justify-content:flex-end;align-self:end}
 button.link{background:none;border:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline}
 button.link.small{font-size:.78rem;font-weight:500;margin-left:6px}
 .ev-edit{padding:4px 0}
