@@ -211,15 +211,89 @@ let open = null; // { kind, id, opts }
 export const registerSheet = (kind, fn) => (drawers[kind] = fn);
 export const sheetOpen = () => open;
 
+/*
+ * Guardado automático. En un registro que ya existe, los formularios con data-autosave se guardan
+ * solos: data-autosave="change" al terminar de editar cada campo, y todos al cerrar el panel (clic
+ * fuera, Esc o Cerrar). En un alta (todavía sin registro), lo capturado se conserva como borrador y
+ * vuelve a aparecer la próxima vez que se abre el mismo formulario.
+ */
+const drafts = {};
+const draftKey = (o) => o.kind + "|" + (o.opts?.quoteId || o.opts?.sampleId || "");
+
+function sheetFields() {
+  return [...$("sheetHost").querySelectorAll("input[id],select[id],textarea[id]")];
+}
+
+function keepDraft() {
+  if (!open || open.id || !$("sheetHost").querySelector("[data-dirty]")) return;
+  drafts[draftKey(open)] = Object.fromEntries(
+    sheetFields().map((el) => [el.id, el.type === "checkbox" ? el.checked : el.value]),
+  );
+}
+
+function restoreDraft() {
+  const d = open && !open.id && !open.restored && drafts[draftKey(open)];
+  if (!d) return;
+  open.restored = true;
+  for (const el of sheetFields()) {
+    if (!(el.id in d)) continue;
+    if (el.type === "checkbox") el.checked = d[el.id];
+    else el.value = d[el.id];
+  }
+  const sheet = $("sheetHost").querySelector(".sheet");
+  const box = document.createElement("p");
+  box.className = "draft-note";
+  box.setAttribute("role", "status");
+  box.innerHTML = 'Recuperé lo que habías capturado sin guardar. <button type="button" class="link small" id="dropDraft">Empezar de cero</button>';
+  sheet.children[0].after(box);
+  $("dropDraft").onclick = () => {
+    delete drafts[draftKey(open)];
+    open.restored = false;
+    drawSheet(true);
+  };
+}
+
+/** Guarda lo que quedó a medias en los formularios de un registro existente. */
+function flushAutosave() {
+  if (!open?.id) return;
+  for (const f of $("sheetHost").querySelectorAll("form[data-autosave][data-dirty]")) {
+    delete f.dataset.dirty;
+    f.requestSubmit();
+  }
+}
+
 export function openSheet(kind, id = "", opts = {}) {
+  if (open && !open.id) {
+    // Se acaba de crear el registro (el alta reabre el panel con su id): el borrador ya no sirve.
+    if (id && open.kind === kind) delete drafts[draftKey(open)];
+    else keepDraft();
+  } else flushAutosave();
   open = { kind, id, opts, confirmDel: false };
   drawSheet(true);
 }
 
 export function closeSheet() {
+  flushAutosave();
+  keepDraft();
   open = null;
   $("sheetHost").innerHTML = "";
 }
+
+// Marca qué formularios tienen cambios sin guardar y guarda al terminar de editar un campo.
+document.addEventListener("input", (e) => {
+  const form = e.target.closest?.("#sheetHost form");
+  if (form) form.dataset.dirty = "1";
+});
+document.addEventListener("submit", (e) => delete e.target.dataset?.dirty, true);
+document.addEventListener("change", (e) => {
+  const form = e.target.closest?.("#sheetHost form");
+  if (!form) return;
+  form.dataset.dirty = "1";
+  if (open?.id && form.dataset.autosave === "change") {
+    delete form.dataset.dirty;
+    form.requestSubmit();
+  }
+});
 
 /** Redibuja el panel abierto. No lo hace mientras se escribe en él, para no perder lo capturado. */
 export function drawSheet(force = false) {
@@ -227,6 +301,7 @@ export function drawSheet(force = false) {
   const host = $("sheetHost");
   const focused = document.activeElement;
   if (!force && focused && host.contains(focused) && /INPUT|SELECT|TEXTAREA/.test(focused.tagName)) return;
+  if (!force && host.querySelector("form[data-dirty]")) return; // hay cambios a medias: no borrarlos
   const html = drawers[open.kind](open);
   if (html === null) return closeSheet();
   host.innerHTML = `<div class="scrim" id="scrim"><aside class="sheet" role="dialog" aria-modal="true" aria-label="${esc(html.label)}">
@@ -235,6 +310,7 @@ export function drawSheet(force = false) {
   $("scrim").addEventListener("click", (e) => e.target.id === "scrim" && closeSheet());
   $("closeBtn").onclick = closeSheet;
   html.bind?.();
+  restoreDraft();
 }
 
 /** Bloque "Eliminar" con confirmación en dos pasos. */
@@ -264,7 +340,7 @@ export function timelineHtml(items, finalKey, editPath = null) {
     .map((h, i) => {
       const next = items[i + 1]?.at || (h.key !== finalKey ? new Date().toISOString() : null);
       if (editable && open?.editEvent === h.id) {
-        return `<li><form class="grid ev-edit" data-ev-form="${h.id}" data-path="${esc(editPath)}">
+        return `<li><form class="grid ev-edit" data-ev-form="${h.id}" data-path="${esc(editPath)}" data-autosave="close">
           <div class="full"><b>${esc(h.label)}</b></div>
           <label>Fecha y hora<input id="ev_at" type="datetime-local" value="${toLocalInput(h.at)}" required></label>
           <label>Nota<input id="ev_note" maxlength="500" value="${esc(h.note)}"></label>

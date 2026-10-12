@@ -82,6 +82,8 @@ button:disabled{opacity:.5;cursor:default}
 .note{font-size:.85rem;color:var(--muted)}
 .banner,.sheet-error{background:var(--warn-soft);color:var(--fg);border-radius:8px;padding:10px 14px;font-size:.9rem}
 .sheet-error{margin:8px 0 0}
+.draft-note{margin:0;font-size:.85rem;background:var(--accent-soft);border-radius:8px;padding:8px 12px}
+.autosave-note{font-size:.78rem;color:var(--muted)}
 .avg{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
 .avg div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:.8rem;color:var(--muted)}
 .avg b{display:block;font-family:var(--f-mono);font-size:1rem;color:var(--fg);font-weight:500}
@@ -168,6 +170,8 @@ label.check{flex-direction:row!important;align-items:center;gap:8px!important;fo
 textarea{font:inherit;resize:vertical}
 ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.9rem}
 ul.plain.tests button.link{text-align:left}
+ul.plain.blocks li{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}
+ul.plain.blocks .note{display:block}
 button.link{background:none;border:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline}
 button.link.small{font-size:.78rem;font-weight:500;margin-left:6px}
 .ev-edit{padding:4px 0}

@@ -161,7 +161,7 @@ registerSheet("quote", (open) => {
     ${isNew ? "" : `<div class="sec"><h4>Historial</h4>${timelineHtml(q.history.map((h) => ({ id: h.id, key: h.status, label: quoteStatusOf(h.status)?.name || h.status, at: h.at, note: h.note })), "perdida", `/quotes/${q.id}`)}</div>`}
     ${acts.length ? `<div class="sec"><h4>Tiempo registrado</h4><ul class="plain">${acts.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
-    <form class="grid" id="quoteForm">
+    <form class="grid" id="quoteForm" ${isNew ? "" : 'data-autosave="change"'}>
       ${input("number", "Número de cotización")}${input("salesRep", "Vendedor")}
       ${input("client", "Cliente", "full")}
       <label class="full">Pruebas solicitadas<textarea id="q_tests" rows="2" ${dis}>${esc(q.tests ?? "")}</textarea></label>
@@ -173,7 +173,7 @@ registerSheet("quote", (open) => {
           ${dateInput("n_comprada", "Compra (llegada de la orden de compra)")}
         </div></fieldset>`
         : `<label class="full">Llegada de la orden de compra<input id="q_poReceivedAt" type="datetime-local" value="${toLocalInput(q.poReceivedAt)}" ${dis}></label>`}
-      ${canWrite() ? `<div class="row full"><button class="primary" type="submit">${isNew ? "Agregar cotización" : "Guardar datos"}</button><span class="note" id="qSaveMsg" role="status"></span></div>` : ""}
+      ${!canWrite() ? "" : isNew ? `<div class="row full"><button class="primary" type="submit">Agregar cotización</button><span class="note" id="qSaveMsg" role="status"></span></div>` : `<p class="autosave-note full">Los cambios se guardan solos al terminar cada campo. <b id="qSaveMsg" role="status"></b></p>`}
     </form></div>
     ${isNew ? "" : del.html}`;
 
