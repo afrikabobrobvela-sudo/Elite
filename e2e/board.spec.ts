@@ -163,3 +163,37 @@ test("contraseña incorrecta", async ({ page }) => {
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page.getByRole("alert")).toHaveText("Contraseña incorrecta.");
 });
+
+test("tiempo pasado en una muestra, corrección y guardado automático", async ({ page }, info) => {
+  const code = `M-AUTO-${info.project.name}`;
+  await login(page, "clave-editor");
+  await page.getByRole("button", { name: "Nueva muestra" }).click();
+  await page.getByLabel("Muestra", { exact: true }).fill(code);
+  // Cerrar sin guardar conserva lo capturado como borrador.
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Nueva muestra" }).click();
+  await expect(page.getByLabel("Muestra", { exact: true })).toHaveValue(code);
+  await expect(page.getByText("Recuperé lo que habías capturado")).toBeVisible();
+  await page.getByRole("button", { name: "Agregar muestra", exact: true }).click();
+  await expect(page.getByRole("heading", { name: code })).toBeVisible();
+
+  // Un dato editado se guarda solo, aunque se cierre el panel sin pulsar nada.
+  await page.getByLabel("Cliente", { exact: true }).fill("Cliente guardado solo");
+  await page.keyboard.press("Escape");
+  await page.locator("#sampleBoard .card", { hasText: code }).click();
+  await expect(page.getByLabel("Cliente", { exact: true })).toHaveValue("Cliente guardado solo");
+
+  // Tiempo que se olvidó iniciar: se registra con inicio y fin, y luego se corrige.
+  await page.getByRole("button", { name: "Registrar tiempo pasado" }).last().click();
+  await page.getByLabel("Inicio", { exact: true }).fill("2026-10-05T09:00");
+  await page.getByLabel("Fin", { exact: true }).fill("2026-10-05T11:00");
+  await page.getByRole("button", { name: "Guardar registro" }).click();
+  await expect(page.getByRole("heading", { name: code })).toBeVisible();
+  await expect(page.getByRole("dialog").getByText("2 h", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: /^Corregir inicio y fin/ }).click();
+  await page.getByLabel("Fin", { exact: true }).fill("2026-10-05T12:00");
+  await page.getByLabel("Fin", { exact: true }).blur();
+  await expect(page.getByText("Guardado", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: `Volver a ${code}` }).click();
+  await expect(page.getByRole("dialog").getByText("3 h", { exact: false }).first()).toBeVisible();
+});

@@ -89,20 +89,21 @@ registerSheet("activity", (open) => {
     ? (() => {
         const end = new Date();
         const start = new Date(end.getTime() - 60 * 60 * 1000);
-        return { type: "cotizacion", startedAt: start.toISOString(), endedAt: end.toISOString(), note: "" };
+        const { type = "cotizacion", sampleId = null, quoteId = null } = open.opts;
+        return { type, sampleId, quoteId, startedAt: start.toISOString(), endedAt: end.toISOString(), note: "" };
       })()
     : state.activities.find((x) => x.id === open.id);
   if (!a) return null;
   const del = deleteBlock("este registro", () => api(`/activities/${a.id}`, { method: "DELETE" }));
   const body = `
-    <form class="grid" id="actForm">
+    <form class="grid" id="actForm" ${isNew ? "" : 'data-autosave="change"'}>
       <label class="full">Actividad<select id="a_type" aria-label="Actividad">${typeOptions(a.type)}</select></label>
       <label>Inicio<input id="a_start" type="datetime-local" value="${toLocalInput(a.startedAt)}" required></label>
       <label>Fin<input id="a_end" type="datetime-local" value="${toLocalInput(a.endedAt)}"></label>
       <label class="full">Vincular a<select id="a_link" aria-label="Vincular a">${linkOptions(a)}</select></label>
       <label class="full">Nota<input id="a_note" maxlength="500" value="${esc(a.note)}"></label>
       <p class="note full">Deja el fin vacío si la actividad sigue en curso.</p>
-      <div class="row full"><button class="primary" type="submit">${isNew ? "Guardar registro" : "Guardar cambios"}</button><span class="note" id="aMsg" role="status"></span></div>
+      ${isNew ? `<div class="row full"><button class="primary" type="submit">Guardar registro</button><span class="note" id="aMsg" role="status"></span></div>` : `<p class="autosave-note full">Los cambios se guardan solos al terminar cada campo. <b id="aMsg" role="status"></b></p>`}
     </form>
     ${isNew ? "" : del.html}`;
   const bind = () => {
@@ -119,10 +120,18 @@ registerSheet("activity", (open) => {
       const res = isNew
         ? await mutate(() => api("/activities", { method: "POST", body: payload }))
         : await mutate(() => api(`/activities/${a.id}`, { method: "PATCH", body: payload }));
-      if (res) openSheet("activity", res.data.id);
-      if (res && $("aMsg")) $("aMsg").textContent = "Guardado";
+      if (!res) return;
+      // Si se abrió desde una muestra o cotización, vuelve a ella; si no, queda abierto el registro nuevo.
+      if (isNew) openSheet(open.opts.back?.kind ?? "activity", open.opts.back?.id ?? res.data.id);
+      else if ($("aMsg")) $("aMsg").textContent = "Guardado";
     });
   };
-  return { label: "Registro de tiempo", title: isNew ? "Registrar tiempo" : "Corregir registro", body, bind };
+  const back = open.opts.back;
+  const backBtn = back ? `<button type="button" class="link small" id="aBack">Volver a ${esc(back.label)}</button>` : "";
+  const bindAll = () => {
+    bind();
+    if ($("aBack")) $("aBack").onclick = () => openSheet(back.kind, back.id);
+  };
+  return { label: "Registro de tiempo", title: isNew ? "Registrar tiempo" : "Corregir registro", body: backBtn + body, bind: bindAll };
 });
 

@@ -102,13 +102,23 @@ registerSheet("sample", (open) => {
   const runningHere = run && run.sampleId === m.id;
   const byType = {};
   for (const a of linked) byType[a.type] = (byType[a.type] ?? 0) + activityMs(a);
-  const timer = !isNew && canWrite() && (stageAct || runningHere)
-    ? `<div class="sec"><h4>Cronómetro</h4><div class="row">${
-        runningHere
-          ? `<span class="note"><b>${esc(activityTypeOf(run.type)?.name)}</b> corriendo desde ${esc(fmtTs(run.startedAt))}</span><button class="primary" id="sStopTimer">Terminar</button>`
-          : `<button class="primary" id="sStartTimer">Iniciar: ${esc(stageAct.name)}</button>`
-      }</div>${stageAct && byType[stageAct.key] ? `<p class="note">Llevas ${fmtHours(byType[stageAct.key])} en ${esc(stageAct.name.toLowerCase())} de esta muestra.</p>` : ""}</div>`
+  // Cada bloque de tiempo se puede corregir (inicio y fin) por si el cronómetro se inició tarde o no se inició.
+  const blocks = [...linked].sort((x, y) => y.startedAt.localeCompare(x.startedAt));
+  const blockList = blocks.length
+    ? `<ul class="plain blocks">${blocks.map((a) => `<li><span><b>${esc(activityTypeOf(a.type)?.name)}</b> · ${fmtHours(activityMs(a))}${a.endedAt ? "" : " (en curso)"}
+        <span class="note">${esc(fmtTs(a.startedAt))} – ${a.endedAt ? esc(fmtTs(a.endedAt)) : "ahora"}</span></span>${
+          canWrite() ? `<button class="link small" data-act-edit="${esc(a.id)}" aria-label="Corregir inicio y fin de ${esc(activityTypeOf(a.type)?.name)}">Corregir</button>` : ""
+        }</li>`).join("")}</ul>`
     : "";
+  const timer = isNew || (!canWrite() && !blocks.length)
+    ? ""
+    : `<div class="sec"><h4>Cronómetro${linkedMs ? ` · ${fmtHours(linkedMs)} registradas` : ""}</h4>${
+        canWrite() ? `<div class="row">${
+          runningHere
+            ? `<span class="note"><b>${esc(activityTypeOf(run.type)?.name)}</b> corriendo desde ${esc(fmtTs(run.startedAt))}</span><button class="primary" id="sStopTimer">Terminar</button>`
+            : stageAct ? `<button class="primary" id="sStartTimer">Iniciar: ${esc(stageAct.name)}</button>` : ""
+        }<button id="sPastTimer">Registrar tiempo pasado</button></div>` : ""
+      }${blockList}</div>`;
 
   const body = `
     ${isNew ? "" : `<div class="row"><span class="chip ${st.c}">${esc(st.t)}</span><span class="note">Etapa actual: <b>${esc(stageOf(m.stage).name)}</b>${m.stage !== "entregado" ? " desde hace " + esc(ago(m.stageSince)) : ""}</span></div>`}
@@ -122,17 +132,15 @@ registerSheet("sample", (open) => {
       </div></div>` : ""}
     ${timer}
     ${showCond ? `<div class="sec"><h4>Acondicionamiento</h4>
-      <form class="grid" id="condForm">
+      <form class="grid" id="condForm" data-autosave="change">
         ${input("conditioningStart", "Inicio", "datetime-local", "", toLocalInput(m.conditioningStart))}
         ${input("conditioningEnd", "Fin", "datetime-local", "", toLocalInput(m.conditioningEnd))}
         <p class="note full">${cond ? `<span class="chip ${cond.c}">${esc(cond.t)}</span> ` : ""}${limit ? `Para ${esc(m.test)} el acondicionamiento dura de ${limit.minDays} a ${limit.maxDays} días.` : "Se anota solo al pasar a Acondicionando y al salir; puedes corregirlo aquí."}</p>
-        ${canWrite() ? `<div class="row full"><button type="submit">Guardar acondicionamiento</button><span class="note" id="condMsg" role="status"></span></div>` : ""}
+        ${canWrite() ? `<p class="autosave-note full">Los cambios se guardan solos al terminar cada campo. <b id="condMsg" role="status"></b></p>` : ""}
       </form></div>` : ""}
     ${isNew ? "" : `<div class="sec"><h4>Historial de etapas</h4>${timelineHtml(m.history.map((h) => ({ id: h.id, key: h.stage, label: stageOf(h.stage)?.name || h.stage, at: h.at, note: h.note })), "entregado", `/samples/${m.id}`)}</div>`}
-    ${!isNew && linked.length ? `<div class="sec"><h4>Tiempo registrado en esta muestra: ${fmtHours(linkedMs)}</h4>
-      <ul class="plain">${linked.map((a) => `<li>${esc(activityTypeOf(a.type)?.name)} · ${fmtHours(activityMs(a))} · <span class="note">${esc(fmtTs(a.startedAt))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sec"><h4>Datos</h4>
-    <form class="grid" id="dataForm">
+    <form class="grid" id="dataForm" ${isNew ? "" : 'data-autosave="change"'}>
       ${input("code", "Muestra")}${input("receipt", "Recibo")}
       <label>Cotización<select id="f_quoteId" aria-label="Cotización" ${dis}><option value="">Sin vincular</option>${state.quotes.map((x) => `<option value="${esc(x.id)}" ${x.id === m.quoteId ? "selected" : ""}>${esc(x.number || "Sin número")} · ${esc(x.client)}</option>`).join("")}</select></label>
       ${input("quote", "Número de cotización")}
@@ -150,7 +158,7 @@ registerSheet("sample", (open) => {
       </fieldset>
       ${isNew ? `<label>Etapa inicial<select id="f_stage" aria-label="Etapa inicial">${stages().slice(0, -1).map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join("")}</select></label>
         ${whenInput("f_at", "Desde cuándo está en esa etapa")}` : ""}
-      ${canWrite() ? `<div class="row full"><button class="primary" type="submit">${isNew ? "Agregar muestra" : "Guardar datos"}</button><span class="note" id="saveMsg" role="status"></span></div>` : ""}
+      ${!canWrite() ? "" : isNew ? `<div class="row full"><button class="primary" type="submit">Agregar muestra</button><span class="note" id="saveMsg" role="status"></span></div>` : `<p class="autosave-note full">Los cambios se guardan solos al terminar cada campo. <b id="saveMsg" role="status"></b></p>`}
     </form></div>
     ${isNew ? "" : deleteBlock(m.code || "esta muestra", () => api(`/samples/${m.id}`, { method: "DELETE" })).html}`;
 
@@ -163,6 +171,10 @@ registerSheet("sample", (open) => {
       await mutate(() => api(`/samples/${m.id}/stage-changes`, { method: "POST", body: { stage, note: note || undefined, at } }));
     };
     if ($("sStartTimer")) $("sStartTimer").onclick = () => mutate(() => api("/activities", { method: "POST", body: { type: stageAct.key, sampleId: m.id } }));
+    const back = { kind: "sample", id: m.id, label: m.code || "la muestra" };
+    if ($("sPastTimer")) $("sPastTimer").onclick = () =>
+      openSheet("activity", "", { sampleId: m.id, type: stageAct?.key ?? run?.type ?? "prueba", back });
+    for (const b of document.querySelectorAll("[data-act-edit]")) b.onclick = () => openSheet("activity", b.dataset.actEdit, { back });
     if ($("sStopTimer")) $("sStopTimer").onclick = () => mutate(() => api(`/activities/${run.id}`, { method: "PATCH", body: { endedAt: new Date().toISOString() } }));
     if ($("nextBtn")) $("nextBtn").onclick = () => moveTo(nextS.key);
     if ($("setBtn")) $("setBtn").onclick = () => $("stageSel").value !== m.stage && moveTo($("stageSel").value);
